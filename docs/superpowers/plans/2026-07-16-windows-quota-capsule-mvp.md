@@ -107,13 +107,13 @@ apps/
 
 手动运行 `codex -s read-only -a untrusted app-server`，发送 `initialize` → `initialized` → `account/rateLimits/read` 三步 JSON-RPC，确认 Windows 上可用；记录真实响应（脱敏后存入 `fixtures/codex-rate-limits/`），核对字段名与 `resetsAt` 时间戳单位（秒/毫秒）。
 
-- [ ] **Step 2: 验证 Tauri 工具链**
+- [x] **Step 2: 验证 Tauri 工具链**
 
-确认 Rust + MSVC Build Tools + WebView2 可用：`cargo --version`，并用官方最小模板跑通一次 `tauri dev`。
+确认 Rust + MSVC Build Tools + WebView2 可用：`cargo --version`，并用官方最小模板跑通一次编译检查（本机用 `create-tauri-app` + `cargo check`，等价于验证工具链；完整 `tauri build` 留到 Task 8/12）。
 
-- [x] **Step 3: 记录结论（部分 — Codex 已验证；Tauri 工具链待装）**
+- [x] **Step 3: 记录结论**
 
-#### Task 0 结论（2026-07-16 Inline spike）
+#### Task 0 结论（2026-07-16 Inline spike — 完成）
 
 **Codex / Node（通过）**
 
@@ -126,22 +126,22 @@ apps/
 | `resetsAt` 单位 | **Unix 秒**（例：`1784671222` → `2026-07-21T22:00:22.000Z`） |
 | 周窗口字段 | `rateLimits.primary.windowDurationMins === 10080`；`secondary` 可为 `null` |
 | 额外字段（MVP 可忽略） | `credits`、`planType`、`rateLimitResetCredits.availableCount`、`rateLimitsByLimitId` |
-| 抓包 | `fixtures/codex-rate-limits/live-capture.json`（JSON-RPC 完整响应）；派生 fixture 已按真实 shape 校准 |
+| 抓包 | `fixtures/codex-rate-limits/live-capture.json`；派生 fixture 已按真实 shape 校准 |
 
-**Tauri 工具链（未通过 — 阻塞 Task 8+）**
+**Tauri 工具链（通过 — 本机已安装）**
 
 | 项 | 结果 |
 | --- | --- |
 | WebView2 | 已安装（Edge WebView2 `150.0.4078.65`） |
-| Rust / cargo / rustup | **未安装**（无 `~/.cargo`、`~/.rustup`） |
-| MSVC Build Tools / `cl.exe` | **未安装** |
-| Visual Studio | 未检测到 |
+| Rust / cargo | `rustc 1.97.0` / `cargo 1.97.0`（rustup stable-x86_64-pc-windows-msvc） |
+| MSVC Build Tools | VS 2022 BuildTools @ `C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools`；`cl.exe` 19.44 |
+| 冒烟 | `cargo new` + `cargo build` OK；`create-tauri-app` vanilla-ts + `src-tauri` 下 `cargo check` OK（Finished，exit 0） |
 
 **对后续任务的影响**
 
 1. Task 6 路径探测必须包含 `%APPDATA%\npm\codex.cmd`，且不能假设用户 PATH 已含 npm 全局目录。
 2. Task 5 fixture / 解析以本机真实 shape 为准：`secondary` 可为 null；`resetsAt` 按秒 ×1000。
-3. 进入 Task 8 前必须先安装：Rust（rustup）+ MSVC C++ Build Tools（含 Windows SDK）。WebView2 已就绪。
+3. Task 8+ 可开工；编译前 shell 需加载 `vcvars64.bat` 或保证 MSVC 在 PATH（rustup 已写入用户 PATH）。
 
 ---
 
