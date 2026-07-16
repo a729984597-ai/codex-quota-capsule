@@ -8,6 +8,14 @@ export type CodexRateLimitParseOptions = {
   fetchedAt: Date;
 };
 
+/** Codex Plus weekly window (~7 days). */
+const WEEKLY_MINUTES = 10_080;
+const WEEKLY_TOLERANCE_MINUTES = 60;
+
+/** Accept day / week / month style cycle windows (1 day … 45 days). */
+const MIN_CYCLE_MINUTES = 1_440;
+const MAX_CYCLE_MINUTES = 45 * 24 * 60;
+
 export function parseCodexRateLimits(
   result: unknown,
   options: CodexRateLimitParseOptions,
@@ -17,16 +25,7 @@ export function parseCodexRateLimits(
     .map((key) => parseRateLimitWindow(rateLimits[key]))
     .filter((window): window is QuotaWindow => Boolean(window));
 
-  const weeklyCandidate = windows.find(
-    (window) =>
-      Math.abs(window.windowMinutes - 10_080) <= 60 &&
-      window.resetsAt.getTime() > options.fetchedAt.getTime() &&
-      window.resetsAt.getTime() - options.fetchedAt.getTime() <=
-        8 * 24 * 60 * 60_000,
-  );
-  const weeklyWindow = weeklyCandidate
-    ? { ...weeklyCandidate, label: "weekly" }
-    : undefined;
+  const weeklyWindow = pickCycleWindow(windows, options.fetchedAt);
 
   if (!weeklyWindow) {
     return {
@@ -35,7 +34,7 @@ export function parseCodexRateLimits(
       fetchedAt: options.fetchedAt,
       diagnosticCode: "no_weekly_window" satisfies DiagnosticCode,
       errorMessage:
-        "codex app-server rateLimits did not include any usable weekly windows.",
+        "codex app-server rateLimits did not include any usable weekly/monthly windows.",
     };
   }
 
@@ -45,6 +44,56 @@ export function parseCodexRateLimits(
     fetchedAt: options.fetchedAt,
     weeklyWindow,
   };
+}
+
+/**
+ * Prefer a ~weekly window; otherwise accept a longer free-tier cycle
+ * (e.g. 30-day / 43200 min) when Plus weekly is absent.
+ */
+function pickCycleWindow(
+  windows: QuotaWindow[],
+  fetchedAt: Date,
+): QuotaWindow | undefined {
+  const weeklyCandidate = windows.find(
+    (window) =>
+      Math.abs(window.windowMinutes - WEEKLY_MINUTES) <= WEEKLY_TOLERANCE_MINUTES &&
+      isUsableReset(window, fetchedAt, 8 * 24 * 60),
+  );
+  if (weeklyCandidate) {
+    return { ...weeklyCandidate, label: "weekly" };
+  }
+
+  const cycleCandidates = windows
+    .filter(
+      (window) =>
+        window.windowMinutes >= MIN_CYCLE_MINUTES &&
+        window.windowMinutes <= MAX_CYCLE_MINUTES &&
+        isUsableReset(window, fetchedAt, window.windowMinutes + 1_440),
+    )
+    .sort((a, b) => b.windowMinutes - a.windowMinutes);
+
+  const best = cycleCandidates[0];
+  if (!best) return undefined;
+
+  const label =
+    Math.abs(best.windowMinutes - 43_200) <= 720
+      ? "monthly"
+      : Math.abs(best.windowMinutes - WEEKLY_MINUTES) <= WEEKLY_TOLERANCE_MINUTES
+        ? "weekly"
+        : "cycle";
+
+  return { ...best, label };
+}
+
+function isUsableReset(
+  window: QuotaWindow,
+  fetchedAt: Date,
+  maxRemainingMinutes: number,
+): boolean {
+  const remainingMs = window.resetsAt.getTime() - fetchedAt.getTime();
+  return (
+    remainingMs > 0 && remainingMs <= maxRemainingMinutes * 60_000
+  );
 }
 
 function parseRateLimitWindow(value: unknown): QuotaWindow | null {

@@ -31,7 +31,7 @@ export function renderCapsule(
   refreshing = false,
 ): void {
   const used =
-    model.usedPercent === null ? "—" : `本周已用 ${Math.round(model.usedPercent)}%`;
+    model.usedPercent === null ? "—" : `已用 ${Math.round(model.usedPercent)}%`;
 
   root.dataset.tone = model.tone;
   root.classList.toggle("expanded", expanded);

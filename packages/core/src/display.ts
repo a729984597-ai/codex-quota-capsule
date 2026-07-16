@@ -40,7 +40,7 @@ export function buildCapsuleViewModel(input: BuildViewModelInput): CapsuleViewMo
       state: "dataUnavailable",
       tone: "unknown",
       statusLabel: STATUS.dataUnavailable,
-      judgmentText: "正在显示上次成功的周额度数据，恢复实时读取前暂不判断周速度。",
+      judgmentText: "正在显示上次成功的额度数据，恢复实时读取前暂不判断消耗速度。",
       usedPercent: input.forecast.usedPercent,
       resetCountdownText: formatCountdown(input.resetsAt, now),
       freshnessText: formatFreshness(input.fetchedAt, now, true),
@@ -70,19 +70,19 @@ export function buildCapsuleViewModel(input: BuildViewModelInput): CapsuleViewMo
 function judgmentFor(f: RunwayForecast): string {
   switch (f.state) {
     case "dataUnavailable":
-      return "暂时没有可用的周额度数据";
+      return "暂时没有可用的额度周期数据";
     case "exhausted":
-      return "本周额度已用尽，重置后会自动恢复";
+      return "本周期额度已用尽，重置后会自动恢复";
     case "earlyEstimate":
       return f.confidenceReason === "no-consumption-observed"
-        ? "尚未观察到消耗，先按本周剩余时间匀速使用"
-        : "初步判断：按本周平均速度估算是否可持续";
+        ? "尚未观察到消耗，先按本周期剩余时间匀速使用"
+        : "初步判断：按本周期平均速度估算是否可持续";
     case "onTrack":
-      return "按当前节奏，有望撑到本周重置";
+      return "按当前节奏，有望撑到本周期重置";
     case "runningFast":
       return "仍可能撑到重置，但当前速度已经偏快";
     case "mayRunOut":
-      return "按本周平均速度，本周额度可能在重置前用完";
+      return "按本周期平均速度，额度可能在重置前用完";
   }
 }
 

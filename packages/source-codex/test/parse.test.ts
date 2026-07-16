@@ -34,4 +34,15 @@ describe("parseCodexRateLimits", () => {
     expect(snap.diagnosticCode).toBe("no_weekly_window");
     expect(snap.weeklyWindow).toBeUndefined();
   });
+
+  it("parses free-tier monthly (43200 min) as an ok cycle window", () => {
+    const result = JSON.parse(
+      readFileSync(join(fixturesDir, "free-monthly.json"), "utf8"),
+    );
+    const snap = parseCodexRateLimits(result, { fetchedAt: FETCHED_AT });
+    expect(snap.sourceStatus).toBe("ok");
+    expect(snap.weeklyWindow?.label).toBe("monthly");
+    expect(snap.weeklyWindow?.windowMinutes).toBe(43_200);
+    expect(snap.weeklyWindow?.usedPercent).toBe(0);
+  });
 });
