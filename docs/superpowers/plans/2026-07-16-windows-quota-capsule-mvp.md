@@ -161,7 +161,7 @@ apps/
 - Consumes: none
 - Produces: workspace scripts `build`, `test`, `lint`
 
-- [ ] **Step 1: Write root workspace files**
+- [x] **Step 1: Write root workspace files**
 
 `package.json`:
 
@@ -300,12 +300,12 @@ Windows Quota Capsule — Codex-first local weekly runway gauge.
 - `apps/windows` — Tauri 2 shell + WebView UI
 ```
 
-- [ ] **Step 2: Install dependencies**
+- [x] **Step 2: Install dependencies**
 
 Run: `npm install`  
 Expected: lockfile created, workspaces linked, exit 0
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
 
 ```bash
 git add package.json package-lock.json tsconfig.base.json vitest.config.ts packages AGENTS.md
