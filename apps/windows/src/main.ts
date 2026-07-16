@@ -5,6 +5,8 @@ import { placeholderModel, renderCapsule, type CapsuleViewModel } from "./render
 let expanded = false;
 let model: CapsuleViewModel = placeholderModel();
 
+const DRAG_THRESHOLD_PX = 4;
+
 async function setExpanded(next: boolean): Promise<void> {
   expanded = next;
   const win = getCurrentWindow();
@@ -22,13 +24,52 @@ function paint(): void {
   });
 }
 
+function bindDragAndToggle(root: HTMLElement): void {
+  let pointerId: number | null = null;
+  let startX = 0;
+  let startY = 0;
+  let dragging = false;
+
+  root.addEventListener("pointerdown", (event) => {
+    if (event.button !== 0) return;
+    const target = event.target as HTMLElement | null;
+    if (target?.closest("button, a, input, textarea")) return;
+
+    pointerId = event.pointerId;
+    startX = event.clientX;
+    startY = event.clientY;
+    dragging = false;
+  });
+
+  root.addEventListener("pointermove", (event) => {
+    if (pointerId !== event.pointerId || dragging) return;
+    const dx = Math.abs(event.clientX - startX);
+    const dy = Math.abs(event.clientY - startY);
+    if (dx < DRAG_THRESHOLD_PX && dy < DRAG_THRESHOLD_PX) return;
+
+    dragging = true;
+    void getCurrentWindow().startDragging();
+  });
+
+  const endPointer = (event: PointerEvent) => {
+    if (pointerId !== event.pointerId) return;
+    const wasDragging = dragging;
+    pointerId = null;
+    dragging = false;
+    if (!wasDragging && event.type === "pointerup") {
+      void setExpanded(!expanded);
+    }
+  };
+
+  root.addEventListener("pointerup", endPointer);
+  root.addEventListener("pointercancel", endPointer);
+}
+
 window.addEventListener("DOMContentLoaded", () => {
   const root = document.querySelector<HTMLElement>("#capsule");
   if (!root) return;
   paint();
-  root.addEventListener("click", () => {
-    void setExpanded(!expanded);
-  });
+  bindDragAndToggle(root);
 });
 
 export function applyViewModel(next: CapsuleViewModel): void {
