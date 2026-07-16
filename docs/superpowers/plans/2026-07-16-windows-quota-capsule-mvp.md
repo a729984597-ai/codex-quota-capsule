@@ -2,6 +2,8 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
+> **Revision 2026-07-16（评审修正）：** ① 预测器改为 paceRatio 分档，修复 runningFast 数学上不可达的矛盾（原阻塞项）；② 新增 Task 0 环境 spike；③ stale 回退统一走桥接 `--stale-from`，删除 Rust 浅覆盖备选；④ Task 10 补 `CREATE_NO_WINDOW`、node 绝对路径解析、刷新单飞锁、连续失败升级；⑤ fixture 时间戳更正 + parse 测试固定 `fetchedAt`；⑥ 若干小修（lint 脚本、Task 6 测试转义、mayRunOut 文案、Task 7 残留三元、Task 9/11 标注）。修改处均带「评审」标注。
+
 **Goal:** Ship a Windows Tauri app with a floating quota capsule and system tray that read-only probes local Codex weekly rate limits and shows a six-state runway judgment.
 
 **Architecture:** npm workspaces hold `packages/core` (provider-neutral MVP predictor + view model) and `packages/source-codex` (Windows-aware Codex app-server reader). A Node bridge script produces a JSON `CapsuleViewModel`. The Tauri Rust shell owns the borderless window, tray, single-instance lock, 60s refresh timer, and AppData persistence; the WebView only renders the view model.
@@ -16,9 +18,11 @@
 - Never run `codex logout`, never reinstall/replace Codex, never log tokens/cookies/prompts.
 - Persist under `%AppData%\Quota Capsule Beta\` only last-success snapshot, refresh time, window position.
 - MVP predictor uses **cycle evidence only** (used% vs elapsed%). Full Mac adaptive fusion (recent/activity/historical) is out of scope.
+- State banding uses pace ratio `r = cycleRate / sustainableRate`: `r ≤ 1` → onTrack, `1 < r ≤ 1.3` → runningFast, `r > 1.3` → mayRunOut (see Task 3).
+- Runtime bridge for Beta: system Node 20+ on PATH; Rust spawns it with `CREATE_NO_WINDOW` and a pre-resolved absolute path (see Task 10). Rust 原生探测是 post-MVP 的去 Node 化方向。
 - UI copy for MVP: Simplified Chinese primary labels (English later).
 - Product state names: `earlyEstimate` | `onTrack` | `runningFast` | `mayRunOut` | `exhausted` | `dataUnavailable`.
-- Diagnostic codes only: `cli_missing` | `auth_required` | `timeout` | `parse_error` | `stale` | `no_weekly_window`.
+- Diagnostic codes only: `cli_missing` | `node_missing` | `auth_required` | `timeout` | `parse_error` | `stale` | `no_weekly_window`.
 - Every behavior change follows TDD; commit after each task.
 - Commit messages in Chinese.
 
@@ -92,6 +96,27 @@ apps/
 
 ---
 
+### Task 0: 环境 spike（评审新增，前置验证，约 0.5 小时）
+
+**目的：** 在写任何代码前验证全计划最大的两个环境未知数；任一失败都会推翻 Task 6–10 的假设，必须先解决环境再开工。
+
+**Files:**
+- Create: `fixtures/codex-rate-limits/`（真实抓包，脱敏后）
+
+- [ ] **Step 1: 验证 codex app-server**
+
+手动运行 `codex -s read-only -a untrusted app-server`，发送 `initialize` → `initialized` → `account/rateLimits/read` 三步 JSON-RPC，确认 Windows 上可用；记录真实响应（脱敏后存入 `fixtures/codex-rate-limits/`），核对字段名与 `resetsAt` 时间戳单位（秒/毫秒）。
+
+- [ ] **Step 2: 验证 Tauri 工具链**
+
+确认 Rust + MSVC Build Tools + WebView2 可用：`cargo --version`，并用官方最小模板跑通一次 `tauri dev`。
+
+- [ ] **Step 3: 记录结论**
+
+把两项结论（真实响应 shape、工具链版本）以注释形式追加到本计划文件；若与 Task 5 的推测 shape 不符，先修正 Task 5 再继续。
+
+---
+
 ### Task 1: Scaffold npm workspaces
 
 **Files:**
@@ -127,7 +152,7 @@ apps/
   "scripts": {
     "build": "npm run build -w packages/core && npm run build -w packages/source-codex",
     "test": "npm run build && vitest run",
-    "lint": "tsc -p tsconfig.base.json --noEmit",
+    "lint": "tsc -p packages/core/tsconfig.json --noEmit && tsc -p packages/source-codex/tsconfig.json --noEmit",
     "refresh:once": "npm run build && node scripts/refresh-once.mjs"
   },
   "devDependencies": {
@@ -312,6 +337,7 @@ export type SourceStatus = "ok" | "stale" | "error";
 
 export type DiagnosticCode =
   | "cli_missing"
+  | "node_missing"
   | "auth_required"
   | "timeout"
   | "parse_error"
@@ -409,11 +435,14 @@ git commit -m "feat(core): 定义额度快照与胶囊视图模型类型"
 2. If `remainingPercent <= 0.5` → `exhausted`
 3. `elapsedHours = windowMinutes/60 - hoursUntilReset` (clamp ≥ small epsilon)
 4. `cycleRatePerHour = usedPercent / elapsedHours`
-5. `projectedRemainingAtReset = remainingPercent - cycleRatePerHour * hoursUntilReset`
-6. If elapsed coverage `< 2 hours` OR usedPercent `< 0.5` → `earlyEstimate`
-7. Else if `projectedRemainingAtReset < 0` → `mayRunOut`
-8. Else if `cycleRatePerHour > sustainableRatePerHour * 1.15` → `runningFast`
-9. Else → `onTrack`
+5. `sustainableRatePerHour = remainingPercent / hoursUntilReset`；`paceRatio = cycleRatePerHour / sustainableRatePerHour`
+6. `projectedRemainingAtReset = remainingPercent - cycleRatePerHour * hoursUntilReset`（仅作展示辅助字段，不参与分档）
+7. If elapsed coverage `< 2 hours` OR usedPercent `< 0.5` → `earlyEstimate`
+8. Else if `paceRatio > 1.3` → `mayRunOut`
+9. Else if `paceRatio > 1` → `runningFast`
+10. Else → `onTrack`
+
+> **评审修正（2026-07-16）**：原规则先判「projected < 0 → mayRunOut」再判「cycleRate > sustainable × 1.15 → runningFast」，但 projected < 0 与 cycleRate > sustainable 在代数上完全等价，走到第二条时恒不成立，runningFast 是死代码且自带测试必挂。现改为按节奏比 paceRatio 分档：轻微超速（省着用还能撑）判 runningFast，大幅超速判 mayRunOut。现有 6 条测试代入新规则全部通过（onTrack 用例 r≈0.67，runningFast 用例 r≈1.22，mayRunOut 用例 r=4）。
 
 - [ ] **Step 1: Write failing predictor tests**
 
@@ -474,14 +503,14 @@ describe("predictRunway", () => {
   });
 
   it("returns runningFast when still projected positive but pace high", () => {
-    // 84h elapsed, 55% used → remaining 45; rate 55/84; sustainable 45/84; 55>45*1.15? cycle>sustainable*1.15
+    // 84h elapsed, 84h left, 55% used → paceRatio = (55/84)/(45/84) ≈ 1.22 → 1 < r ≤ 1.3 → runningFast
     const fetchedAt = new Date(t0.getTime() + 84 * 3600_000);
     const f = predictRunway(snap({ used: 55, remaining: 45, hoursLeft: 84, fetchedAt }), fetchedAt);
     expect(f.state).toBe("runningFast");
   });
 
   it("returns mayRunOut when projection is negative", () => {
-    // 24h elapsed, 40% used → rate 1.667%/h * 144h left = 240 > 60 remaining
+    // 24h elapsed, 144h left, 40% used → paceRatio = (40/24)/(60/144) = 4 > 1.3 → mayRunOut
     const fetchedAt = new Date(t0.getTime() + 24 * 3600_000);
     const f = predictRunway(snap({ used: 40, remaining: 60, hoursLeft: 144, fetchedAt }), fetchedAt);
     expect(f.state).toBe("mayRunOut");
@@ -502,7 +531,8 @@ import type { AgentQuotaSnapshot, RunwayForecast } from "./model.js";
 
 const WEEK_MINUTES = 10_080;
 const EARLY_HOURS = 2;
-const FAST_RATIO = 1.15;
+const RUNNING_FAST_RATIO = 1;
+const MAY_RUN_OUT_RATIO = 1.3;
 
 export function predictRunway(snapshot: AgentQuotaSnapshot, now: Date = new Date()): RunwayForecast {
   const unavailable = (reason: string): RunwayForecast => ({
@@ -549,6 +579,7 @@ export function predictRunway(snapshot: AgentQuotaSnapshot, now: Date = new Date
 
   const cycleRatePerHour = used / elapsedHours;
   const sustainableRatePerHour = remaining / hoursUntilReset;
+  const paceRatio = cycleRatePerHour / sustainableRatePerHour;
   const projectedRemainingAtReset = remaining - cycleRatePerHour * hoursUntilReset;
 
   let state: RunwayForecast["state"];
@@ -557,10 +588,10 @@ export function predictRunway(snapshot: AgentQuotaSnapshot, now: Date = new Date
   if (elapsedHours < EARLY_HOURS || used < 0.5) {
     state = "earlyEstimate";
     confidenceReason = used < 0.5 ? "no-consumption-observed" : "cycle-only-sparse";
-  } else if (projectedRemainingAtReset < 0) {
+  } else if (paceRatio > MAY_RUN_OUT_RATIO) {
     state = "mayRunOut";
-    confidenceReason = "projected-negative";
-  } else if (cycleRatePerHour > sustainableRatePerHour * FAST_RATIO) {
+    confidenceReason = "pace-far-above-sustainable";
+  } else if (paceRatio > RUNNING_FAST_RATIO) {
     state = "runningFast";
     confidenceReason = "pace-above-sustainable";
   } else {
@@ -757,7 +788,7 @@ function judgmentFor(f: RunwayForecast): string {
     case "runningFast":
       return "仍可能撑到重置，但当前速度已经偏快";
     case "mayRunOut":
-      return "照最近速度，本周额度可能在重置前用完";
+      return "按本周平均速度，本周额度可能在重置前用完";
   }
 }
 
@@ -809,7 +840,13 @@ git commit -m "feat(core): 生成中文胶囊视图模型"
   - `parseCodexRateLimits(result: unknown, options: { fetchedAt: Date }): AgentQuotaSnapshot`
   - `classifyCodexError(message: string): DiagnosticCode`
 
+- [ ] **Step 0: 用真实输出校准 fixture（评审补充）**
+
+以 Task 0 spike 抓到的真实 `account/rateLimits/read` 响应为准，核对字段名与 `resetsAt` 的单位（秒/毫秒）；下面的手写 shape 是推测，若与真实输出不符，以真实输出为准并同步修正解析规则与 fixture。
+
 - [ ] **Step 1: Add fixtures**
+
+> **评审修正**：parse 测试必须传入**固定的 `fetchedAt` 常量**（早于 fixture 的 `resetsAt`，建议 `2026-07-16T00:00:00Z` = 1784160000），禁止用 `new Date()`。解析规则要求「resetsAt 在 fetchedAt 之后」，若用当前时间，fixture 时间戳一旦成为过去，「正常」用例会被误判为无周窗口而莫名挂掉（原 fixture 的 1753200000 = 2025-07-22，已经是过去时间，一并更正）。
 
 `weekly-ok.json` — minimal shape:
 
@@ -819,16 +856,18 @@ git commit -m "feat(core): 生成中文胶囊视图模型"
     "primary": {
       "usedPercent": 35,
       "windowDurationMins": 10080,
-      "resetsAt": 1753200000
+      "resetsAt": 1784419200
     },
     "secondary": {
       "usedPercent": 10,
       "windowDurationMins": 180,
-      "resetsAt": 1752681600
+      "resetsAt": 1784170800
     }
   }
 }
 ```
+
+（1784419200 = 2026-07-19T00:00:00Z，晚于固定 fetchedAt 三天，满足「剩余 ≤ 8 天」规则。）
 
 `missing-weekly.json`:
 
@@ -838,7 +877,7 @@ git commit -m "feat(core): 生成中文胶囊视图模型"
     "primary": {
       "usedPercent": 10,
       "windowDurationMins": 180,
-      "resetsAt": 1752681600
+      "resetsAt": 1784170800
     }
   }
 }
@@ -897,12 +936,15 @@ import { codexPathCandidates } from "../src/paths.ts";
 
 describe("codexPathCandidates", () => {
   it("splits Windows PATH with semicolons and includes .cmd/.exe", () => {
+    // 评审修正：原样例双重转义（"C:\\\\bin" 是字面量 C:\\bin），已改为真实 PATH 形态
     const paths = codexPathCandidates(
-      "C:\\\\bin;D:\\\\tools",
-      "C:\\\\Users\\\\demo",
+      "C:\\bin;D:\\tools",
+      "C:\\Users\\demo",
       "win32",
     );
-    expect(paths.some((p) => p.endsWith("C:\\\\bin\\\\codex.cmd") || p.endsWith("C:\\bin\\codex.cmd"))).toBe(true);
+    expect(paths).toContain("C:\\bin\\codex.cmd");
+    expect(paths).toContain("C:\\bin\\codex.exe");
+    expect(paths.some((p) => p.includes("npm"))).toBe(true);
     expect(paths.some((p) => p.includes(".codex"))).toBe(true);
   });
 
@@ -919,7 +961,8 @@ On `win32`:
 
 - Split PATH on `;`
 - For each dir, candidates: `codex.cmd`, `codex.exe`, `codex`
-- Home candidates: `%USERPROFILE%\\.local\\bin\\codex.cmd`, `%USERPROFILE%\\.codex\\...` if present patterns mirror upstream
+- Home candidates: `<home>\.local\bin\codex.cmd`, `<home>\AppData\Roaming\npm\codex.cmd`（npm 全局安装默认位置，评审补充）, `<home>\.codex\...` if present patterns mirror upstream
+- 路径一律用 `path.win32.join` / `path.posix.join` 按传入 platform 拼接，保证测试可在任意平台跑
 
 Use `fs.access` with `fs.constants.F_OK` (Windows executability differs from POSIX `X_OK`).
 
@@ -958,7 +1001,7 @@ git commit -m "feat(source-codex): 支持 Windows 路径探测与 app-server 只
 - Create: `scripts/refresh-once.mjs`
 
 **Interfaces:**
-- Consumes: built `@quota-capsule/source-codex` + `@quota-capsule/core`
+- Consumes: built `@quota-capsule/source-codex` + `@quota-capsule/core`; optional CLI arg `--stale-from <last-success.json>`
 - Produces: stdout JSON `{ ok: boolean, viewModel: CapsuleViewModel, snapshotMeta: { sourceStatus, diagnosticCode } }` only — never raw auth
 
 - [ ] **Step 1: Implement script**
@@ -972,7 +1015,7 @@ const snapshot = await readCodexRateLimits({ fetchedAt, timeoutMs: 30_000 });
 const forecast = predictRunway(snapshot, fetchedAt);
 const viewModel = buildCapsuleViewModel({
   forecast,
-  fetchedAt: snapshot.weeklyWindow ? snapshot.fetchedAt : snapshot.fetchedAt,
+  fetchedAt: snapshot.fetchedAt,
   resetsAt: snapshot.weeklyWindow?.resetsAt ?? null,
   now: fetchedAt,
   isStale: false,
@@ -990,6 +1033,8 @@ process.stdout.write(
   }),
 );
 ```
+
+**Stale 回退（评审修正：第一版就要有）：** 支持 `node scripts/refresh-once.mjs --stale-from <last-success.json>`。实时读取失败且该文件可读时，用其中持久化的 `usedPercent` / `fetchedAtIso` / `resetsAtIso` 调 `buildCapsuleViewModel({ isStale: true, diagnosticCode })` 输出 stale 视图模型（`ok: false`）。stale 的中文文案与状态语义只存在于 core 一处，Rust 永远不伪造视图模型字段（唯一例外见 Task 10 的 `node_missing` fallback）。
 
 - [ ] **Step 2: Manual smoke (optional if Codex installed)**
 
@@ -1074,7 +1119,7 @@ git commit -m "feat(windows): 搭建 Tauri 无边框悬浮窗壳"
 - Create: `apps/windows/src-tauri/src/tray.rs`
 
 **Interfaces:**
-- Consumes: current `CapsuleViewModel` held in `AppState`
+- Consumes: `AppState`（评审标注：Task 10 才建立——本任务 tooltip 与「立即刷新」先用占位实现，Task 10 接入真实 `CapsuleViewModel` 与刷新命令后再补全）
 - Produces: tray menu Show/Hide, Refresh, Quit; left-click show+focus; tooltip text
 
 - [ ] **Step 1: Add tray menu**
@@ -1123,8 +1168,9 @@ git commit -m "feat(windows): 添加系统托盘与单实例"
 
 - [ ] **Step 1: Implement persistence**
 
-On successful `ok: true`, write `last-success.json` with viewModel + fetchedAt.  
-On failure: if last-success exists, rebuild stale view via calling core logic **or** mark `isStale` in Rust by setting fields (`state=dataUnavailable`, keep usedPercent, `diagnosticCode=stale`). Prefer: bridge accepts `--stale-from path` later; MVP can stale-mark in Rust by shallow field overrides matching Task 4 semantics.
+On successful `ok: true`, write `last-success.json` with viewModel + fetchedAt（至少包含 `usedPercent` / `fetchedAtIso` / `resetsAtIso`，供 stale 回退重建）。  
+On failure: re-invoke the bridge with `--stale-from <last-success.json>`（Task 7 第一版即支持）。**Rust 不做字段浅覆盖、不复刻 core 的文案与状态语义**——stale 视图模型由 core 的 `buildCapsuleViewModel({ isStale: true })` 统一生成（评审修正：原「Rust 浅覆盖字段」备选路径已删除，避免双份语义漂移）。  
+失败升级：连续失败 ≥ 5 次或 stale 数据超过 30 分钟 → 不再展示 stale 数据，进入完全 `dataUnavailable`（落实 spec 中「repeated failure may become fully unavailable」）。
 
 Also save/restore window position on move/exit.
 
@@ -1132,19 +1178,35 @@ Also save/restore window position on move/exit.
 
 ```rust
 // pseudo
+#[cfg(windows)]
+use std::os::windows::process::CommandExt;
+const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+
 fn refresh(app: AppHandle) {
-  let output = Command::new("node")
-    .args([repo_or_resource_path.join("scripts/refresh-once.mjs")])
-    .output();
+  // node 绝对路径在启动时用 `where node` 解析一次并缓存；解析失败 → 直接进入
+  // dataUnavailable（diagnosticCode = node_missing，用 Rust 内置的唯一 fallback 视图模型，见下）
+  let mut cmd = Command::new(node_abs_path());
+  cmd.args([script_path() /*, "--stale-from", last_success_path() 失败重试时 */]);
+  #[cfg(windows)]
+  cmd.creation_flags(CREATE_NO_WINDOW);
+  let output = cmd.output();
   // parse JSON, update state, tray tooltip, emit event
 }
 ```
 
-Packaging note: in dev, resolve script relative to workspace root env `QUOTA_CAPSULE_ROOT`; in production bundle, ship `scripts/` + `packages/*/dist` as resources and run with bundled node **or** require system Node on PATH for Beta. **MVP decision: require system Node.js on PATH** (document in INSTALL). Same for `codex`.
+**Windows spawn 注意事项（评审补充）：**
+
+- 必须设置 `CREATE_NO_WINDOW`（`0x08000000`）：GUI 子系统进程 spawn 控制台程序，否则每 60s 闪一次黑框。
+- 启动时解析一次 `node` 绝对路径（`where node`）并缓存；从资源管理器/开机启动拉起的打包应用，PATH 环境与终端不同，不能假设 spawn 时能裸找到 `node`。
+- `node` 缺失是唯一允许 Rust 自行构造视图模型的场景（桥接本身无法运行）：内置一个硬编码的 `dataUnavailable` + `node_missing` fallback，其余一切视图模型语义都来自 core。
+
+Packaging note: in dev, resolve script relative to workspace root env `QUOTA_CAPSULE_ROOT`; in production bundle, ship `scripts/` + `packages/*/dist` as resources and run with bundled node **or** require system Node on PATH for Beta. **MVP decision: require system Node.js on PATH** (document in INSTALL). Same for `codex`. Post-MVP 简化方向：探测逻辑本质是 spawn `codex app-server` + 三步 JSON-RPC，用 Rust 原生实现约一两百行即可完全去掉 Node 运行时依赖。
 
 - [ ] **Step 3: Timer**
 
 Every 60s call refresh. Tray "立即刷新" calls same. Launch triggers immediate refresh.
+
+单飞锁（评审补充）：定时刷新与手动刷新共用一个 in-flight 标记，刷新进行中再次触发直接跳过，避免并发 spawn 两个 `node` + `codex app-server`。
 
 - [ ] **Step 4: Manual verify**
 
@@ -1180,7 +1242,7 @@ Colors: safe=green, watch=amber, danger=red, unknown=gray.
 
 Height animates to ~140px (Rust `set_size` on toggle). Show judgmentText, freshnessText, diagnosticCode (if any), Refresh button.
 
-- [ ] **Step 3: Drag
+- [ ] **Step 3: Drag region**
 
 Use Tauri `data-tauri-drag-region` on capsule chrome so users can reposition; persist position via existing persist hooks.
 
@@ -1238,6 +1300,8 @@ git commit -m "docs: 添加 Windows 安装说明与验收清单"
 | Six states | 3, 4 |
 | 60s + manual refresh | 10 |
 | AppData persistence | 10 |
+| Repeated-failure escalation to unavailable | 10 |
+| Environment risks validated up front | 0 |
 | Safe diagnostics / no auth mutation | 5, 6, 7 |
 | Single instance | 9 |
 | MVP non-goals deferred | explicitly omitted (charts, credits, i18n, analytics) |
@@ -1246,9 +1310,25 @@ git commit -m "docs: 添加 Windows 安装说明与验收清单"
 ## Placeholder / Consistency Check
 
 - State names consistent: `earlyEstimate|onTrack|runningFast|mayRunOut|exhausted|dataUnavailable`
-- Bridge output always `CapsuleViewModel`
-- Stale behavior matches display tests
-- Windows PATH uses `;` and `codex.cmd`
+- runningFast 可达：paceRatio 分档（`1 < r ≤ 1.3`），阈值与 Task 3 测试已互相验证
+- Bridge output always `CapsuleViewModel`（唯一例外：Rust 内置 `node_missing` fallback）
+- Stale behavior matches display tests; stale 语义只在 core（`--stale-from`）
+- Windows PATH uses `;` and `codex.cmd`; fixture `resetsAt` 均晚于测试固定的 `fetchedAt`
+
+---
+
+## 工作量预估（评审补充）
+
+| 阶段 | 任务 | 预估 |
+| --- | --- | --- |
+| 环境 spike | Task 0 | 0.5 小时 |
+| TS 模型与预测 | Task 1–5 | 0.5–1 天 |
+| Codex 读取 + 桥接 | Task 6–7 | 0.5 天 |
+| Tauri 壳 + 托盘 | Task 8–9 | 0.5–1 天 |
+| 刷新循环 + 持久化 | Task 10 | 0.5–1 天 |
+| UI 打磨 + 文档验收 | Task 11–12 | 0.5 天 |
+
+合计约 2.5–4 个工作日（含 Windows 上的人工验证点）。
 
 ---
 
@@ -1256,9 +1336,4 @@ git commit -m "docs: 添加 Windows 安装说明与验收清单"
 
 Plan complete and saved to `docs/superpowers/plans/2026-07-16-windows-quota-capsule-mvp.md`.
 
-**Two execution options:**
-
-1. **Subagent-Driven（推荐）** — 每个 Task 开一个新子代理，任务间做审查，迭代快  
-2. **Inline Execution** — 本会话内按 executing-plans 连续执行，并设检查点  
-
-你要哪一种？
+**执行方式（已确认）：Inline Execution** — 本会话内按任务连续执行，不使用子代理；任务间设检查点。
