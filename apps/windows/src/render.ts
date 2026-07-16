@@ -28,12 +28,14 @@ export function renderCapsule(
   root: HTMLElement,
   model: CapsuleViewModel,
   expanded: boolean,
+  refreshing = false,
 ): void {
   const used =
     model.usedPercent === null ? "—" : `本周已用 ${Math.round(model.usedPercent)}%`;
 
   root.dataset.tone = model.tone;
   root.classList.toggle("expanded", expanded);
+  root.classList.toggle("refreshing", refreshing);
 
   if (!expanded) {
     root.innerHTML = `
@@ -45,6 +47,7 @@ export function renderCapsule(
     return;
   }
 
+  const refreshLabel = refreshing ? "刷新中" : "刷新";
   root.innerHTML = `
     <div class="expanded-row">
       <span class="dot" aria-hidden="true"></span>
@@ -56,7 +59,10 @@ export function renderCapsule(
       <span>${escapeHtml(model.freshnessText)}</span>
       <span>${escapeHtml(model.resetCountdownText)}</span>
     </div>
-    <button type="button" id="refresh-btn" class="refresh">刷新</button>
+    <button type="button" id="refresh-btn" class="refresh${refreshing ? " is-busy" : ""}" ${refreshing ? "disabled" : ""}>
+      <span class="refresh-spinner" aria-hidden="true"></span>
+      <span class="refresh-label">${refreshLabel}</span>
+    </button>
   `;
 }
 

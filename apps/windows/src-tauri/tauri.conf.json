@@ -6,7 +6,7 @@
   "build": {
     "beforeDevCommand": "npm run dev",
     "devUrl": "http://localhost:1420",
-    "beforeBuildCommand": "npm run build",
+    "beforeBuildCommand": "npm run prepare:release",
     "frontendDist": "../dist"
   },
   "app": {
@@ -21,9 +21,11 @@
         "decorations": false,
         "alwaysOnTop": true,
         "transparent": true,
+        "shadow": false,
         "skipTaskbar": true,
         "acceptFirstMouse": true,
-        "dragDropEnabled": false
+        "dragDropEnabled": false,
+        "backgroundColor": [0, 0, 0, 0]
       }
     ],
     "security": {
@@ -32,7 +34,12 @@
   },
   "bundle": {
     "active": true,
-    "targets": "all",
+    "targets": ["nsis"],
+    "resources": [
+      "resources/scripts/refresh-once.mjs",
+      "resources/packages/core/dist/**/*",
+      "resources/packages/source-codex/dist/**/*"
+    ],
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",

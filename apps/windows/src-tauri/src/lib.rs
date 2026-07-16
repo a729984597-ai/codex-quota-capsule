@@ -10,11 +10,19 @@ use tauri_plugin_single_instance::init as single_instance_init;
 
 use crate::model::WindowPosition;
 use crate::persist::{read_window_position, write_window_position};
-use crate::refresh::{detect_workspace_root, get_view_model, refresh_now, run_refresh, AppState};
+use crate::refresh::{
+    apply_bridge_root, detect_workspace_root, get_view_model, refresh_now, run_refresh, AppState,
+};
 use crate::tray::setup_tray;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    // Prevent WebView2 from filling rounded transparent pixels with white.
+    #[cfg(windows)]
+    {
+        std::env::set_var("WEBVIEW2_DEFAULT_BACKGROUND_COLOR", "0x00000000");
+    }
+
     let workspace_root = detect_workspace_root();
 
     tauri::Builder::default()
@@ -28,9 +36,15 @@ pub fn run() {
         .manage(AppState::new(workspace_root))
         .invoke_handler(tauri::generate_handler![refresh_now, get_view_model])
         .setup(|app| {
+            // Packaged .exe: prefer bundled resources next to the binary.
+            apply_bridge_root(app.handle());
+
             setup_tray(app.handle())?;
 
             if let Some(win) = app.get_webview_window("main") {
+                // Undecorated + shadow on Windows draws a 1px white frame / uneven corners.
+                let _ = win.set_shadow(false);
+
                 if let Some(pos) = read_window_position() {
                     let _ = win.set_position(PhysicalPosition::new(pos.x as i32, pos.y as i32));
                 }

@@ -64,6 +64,39 @@ fn script_path(root: &Path) -> PathBuf {
     root.join("scripts").join("refresh-once.mjs")
 }
 
+fn is_bridge_root(dir: &Path) -> bool {
+    script_path(dir).exists()
+        && dir
+            .join("packages")
+            .join("core")
+            .join("dist")
+            .join("index.js")
+            .exists()
+}
+
+/// Prefer bundled resources next to the packaged .exe; fall back to repo / env.
+pub fn resolve_bridge_root(app: &AppHandle) -> PathBuf {
+    if let Ok(resource_dir) = app.path().resource_dir() {
+        // Tauri may place files as $RESOURCE/resources/... or $RESOURCE/...
+        for candidate in [
+            resource_dir.join("resources"),
+            resource_dir.clone(),
+        ] {
+            if is_bridge_root(&candidate) {
+                return candidate;
+            }
+        }
+    }
+    detect_workspace_root()
+}
+
+pub fn apply_bridge_root(app: &AppHandle) {
+    let root = resolve_bridge_root(app);
+    if let Ok(mut guard) = app.state::<AppState>().workspace_root.lock() {
+        *guard = root;
+    }
+}
+
 pub fn run_refresh(app: &AppHandle) -> Result<CapsuleViewModel, String> {
     let state = app.state::<AppState>();
     if state
@@ -100,7 +133,17 @@ fn refresh_inner(app: &AppHandle) -> Result<CapsuleViewModel, String> {
         .clone();
     let script = script_path(&root);
     if !script.exists() {
-        return Err(format!("refresh script missing: {}", script.display()));
+        let mut vm = CapsuleViewModel::placeholder();
+        vm.state = "dataUnavailable".into();
+        vm.tone = "unknown".into();
+        vm.status_label = "数据暂不可用".into();
+        vm.diagnostic_code = Some("parse_error".into());
+        vm.judgment_text = format!(
+            "刷新桥接脚本缺失：{}。请重新安装应用，或设置 QUOTA_CAPSULE_ROOT 指向仓库根目录。",
+            script.display()
+        );
+        publish(app, &state, vm.clone(), false)?;
+        return Ok(vm);
     }
 
     let live = spawn_refresh(&node, &script, None)?;

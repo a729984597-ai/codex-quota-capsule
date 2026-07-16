@@ -6,6 +6,8 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build",
+    "stage:bridge": "node ../../scripts/stage-bridge-resources.mjs",
+    "prepare:release": "npm run stage:bridge && npm run build",
     "preview": "vite preview",
     "tauri": "tauri"
   },

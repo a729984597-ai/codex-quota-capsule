@@ -5,3 +5,6 @@ target/
 *.log
 .DS_Store
 Thumbs.db
+apps/windows/src-tauri/resources/
+/Quota Capsule Beta.exe
+/resources/

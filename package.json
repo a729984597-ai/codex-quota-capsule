@@ -16,8 +16,10 @@
     "test": "npm run build && vitest run",
     "lint": "tsc -p packages/core/tsconfig.json --noEmit && tsc -p packages/source-codex/tsconfig.json --noEmit",
     "refresh:once": "npm run build && node scripts/refresh-once.mjs",
+    "stage:bridge": "node scripts/stage-bridge-resources.mjs",
+    "copy:portable": "node scripts/copy-portable-to-root.mjs",
     "win:dev": "npm run tauri -w quota-capsule-windows -- dev",
-    "win:build": "npm run tauri -w quota-capsule-windows -- build"
+    "win:build": "npm run build && npm run stage:bridge && npm run tauri -w quota-capsule-windows -- build && npm run copy:portable"
   },
   "devDependencies": {
     "@types/node": "^20.19.2",

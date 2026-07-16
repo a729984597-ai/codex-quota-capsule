@@ -6,6 +6,7 @@ import { placeholderModel, renderCapsule, type CapsuleViewModel } from "./render
 
 let expanded = false;
 let model: CapsuleViewModel = placeholderModel();
+let refreshing = false;
 
 const DRAG_THRESHOLD_PX = 4;
 
@@ -19,7 +20,7 @@ async function setExpanded(next: boolean): Promise<void> {
 function paint(): void {
   const root = document.querySelector<HTMLElement>("#capsule");
   if (!root) return;
-  renderCapsule(root, model, expanded);
+  renderCapsule(root, model, expanded, refreshing);
   root.querySelector("#refresh-btn")?.addEventListener("click", (event) => {
     event.stopPropagation();
     void refreshNow();
@@ -27,11 +28,17 @@ function paint(): void {
 }
 
 async function refreshNow(): Promise<void> {
+  if (refreshing) return;
+  refreshing = true;
+  paint();
   try {
     const next = await invoke<CapsuleViewModel>("refresh_now");
-    applyViewModel(next);
+    model = next;
   } catch (error) {
     console.error("refresh_now failed", error);
+  } finally {
+    refreshing = false;
+    paint();
   }
 }
 

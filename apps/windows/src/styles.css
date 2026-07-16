@@ -9,7 +9,7 @@ html,
 body {
   margin: 0;
   padding: 0;
-  background: transparent;
+  background: transparent !important;
   overflow: hidden;
   width: 100%;
   height: 100%;
@@ -24,8 +24,10 @@ body {
   height: 100%;
   padding: 0 12px;
   border-radius: 14px;
-  background: rgba(28, 30, 34, 0.92);
+  background: #1c1e22;
   border: 1px solid rgba(255, 255, 255, 0.08);
+  overflow: hidden;
+  isolation: isolate;
   user-select: none;
   cursor: grab;
 }
@@ -96,14 +98,67 @@ body {
 
 .refresh {
   align-self: flex-end;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   border: 0;
   border-radius: 8px;
   padding: 4px 10px;
   background: rgba(255, 255, 255, 0.12);
   color: inherit;
   cursor: pointer;
+  transition: background 0.15s ease, opacity 0.15s ease;
 }
 
-.refresh:hover {
+.refresh:hover:not(:disabled) {
   background: rgba(255, 255, 255, 0.18);
+}
+
+.refresh:active:not(:disabled) {
+  background: rgba(255, 255, 255, 0.24);
+  transform: scale(0.97);
+}
+
+.refresh.is-busy,
+.refresh:disabled {
+  cursor: wait;
+  opacity: 0.85;
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.refresh-spinner {
+  display: none;
+  width: 10px;
+  height: 10px;
+  border: 1.5px solid rgba(232, 234, 237, 0.25);
+  border-top-color: rgba(232, 234, 237, 0.95);
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.refresh.is-busy .refresh-spinner {
+  display: inline-block;
+  animation: refresh-spin 0.7s linear infinite;
+}
+
+@keyframes refresh-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.capsule.refreshing .dot {
+  animation: refresh-pulse 0.9s ease-in-out infinite;
+}
+
+@keyframes refresh-pulse {
+  0%,
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.45;
+    transform: scale(0.85);
+  }
 }

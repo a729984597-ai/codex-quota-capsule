@@ -9,16 +9,20 @@
 - 六状态：初步判断 / 够用 / 偏快 / 可能不够 / 已用尽 / 数据暂不可用
 - 60 秒自动刷新 + 手动刷新
 - 本地持久化最近成功快照与窗口位置（`%AppData%\Quota Capsule Beta\`）
+- 可双击运行的 `.exe` / NSIS 安装包（`npm run win:build`）
 
 ## 技术栈
 
 - TypeScript：`packages/core`、`packages/source-codex`
 - Tauri 2：`apps/windows`
-- 桥接脚本：`scripts/refresh-once.mjs`（运行时需要系统 Node）
+- 桥接脚本：打包进应用 `resources/`，由本机 Node 执行（仍需系统 Node + Codex CLI）
 
 ## 快速开始
 
 见 [INSTALL.md](./INSTALL.md)。
+
+最终用户：仓库根目录双击 `Quota Capsule Beta.exe`（需带同目录 `resources/`），或安装 NSIS 包。  
+开发者：`npm run win:dev` 热重载；`npm run win:build` 产出安装包并复制免安装版到根目录。
 
 ## 隐私
 
