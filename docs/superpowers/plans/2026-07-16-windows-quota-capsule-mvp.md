@@ -103,7 +103,7 @@ apps/
 **Files:**
 - Create: `fixtures/codex-rate-limits/`（真实抓包，脱敏后）
 
-- [ ] **Step 1: 验证 codex app-server**
+- [x] **Step 1: 验证 codex app-server**
 
 手动运行 `codex -s read-only -a untrusted app-server`，发送 `initialize` → `initialized` → `account/rateLimits/read` 三步 JSON-RPC，确认 Windows 上可用；记录真实响应（脱敏后存入 `fixtures/codex-rate-limits/`），核对字段名与 `resetsAt` 时间戳单位（秒/毫秒）。
 
@@ -111,9 +111,37 @@ apps/
 
 确认 Rust + MSVC Build Tools + WebView2 可用：`cargo --version`，并用官方最小模板跑通一次 `tauri dev`。
 
-- [ ] **Step 3: 记录结论**
+- [x] **Step 3: 记录结论（部分 — Codex 已验证；Tauri 工具链待装）**
 
-把两项结论（真实响应 shape、工具链版本）以注释形式追加到本计划文件；若与 Task 5 的推测 shape 不符，先修正 Task 5 再继续。
+#### Task 0 结论（2026-07-16 Inline spike）
+
+**Codex / Node（通过）**
+
+| 项 | 结果 |
+| --- | --- |
+| Node | `v22.17.0` @ `C:\Program Files\nodejs\node.exe` |
+| Codex CLI | `@openai/codex@0.141.0` / `codex-cli 0.141.0` |
+| Codex 路径 | `%APPDATA%\npm\codex.cmd`（**当前 shell PATH 不含 `%APPDATA%\npm`，裸 `codex` 找不到**） |
+| app-server | Windows 上可用；`initialize` → `initialized` → `account/rateLimits/read` 成功 |
+| `resetsAt` 单位 | **Unix 秒**（例：`1784671222` → `2026-07-21T22:00:22.000Z`） |
+| 周窗口字段 | `rateLimits.primary.windowDurationMins === 10080`；`secondary` 可为 `null` |
+| 额外字段（MVP 可忽略） | `credits`、`planType`、`rateLimitResetCredits.availableCount`、`rateLimitsByLimitId` |
+| 抓包 | `fixtures/codex-rate-limits/live-capture.json`（JSON-RPC 完整响应）；派生 fixture 已按真实 shape 校准 |
+
+**Tauri 工具链（未通过 — 阻塞 Task 8+）**
+
+| 项 | 结果 |
+| --- | --- |
+| WebView2 | 已安装（Edge WebView2 `150.0.4078.65`） |
+| Rust / cargo / rustup | **未安装**（无 `~/.cargo`、`~/.rustup`） |
+| MSVC Build Tools / `cl.exe` | **未安装** |
+| Visual Studio | 未检测到 |
+
+**对后续任务的影响**
+
+1. Task 6 路径探测必须包含 `%APPDATA%\npm\codex.cmd`，且不能假设用户 PATH 已含 npm 全局目录。
+2. Task 5 fixture / 解析以本机真实 shape 为准：`secondary` 可为 null；`resetsAt` 按秒 ×1000。
+3. 进入 Task 8 前必须先安装：Rust（rustup）+ MSVC C++ Build Tools（含 Windows SDK）。WebView2 已就绪。
 
 ---
 
@@ -848,28 +876,27 @@ git commit -m "feat(core): 生成中文胶囊视图模型"
 
 > **评审修正**：parse 测试必须传入**固定的 `fetchedAt` 常量**（早于 fixture 的 `resetsAt`，建议 `2026-07-16T00:00:00Z` = 1784160000），禁止用 `new Date()`。解析规则要求「resetsAt 在 fetchedAt 之后」，若用当前时间，fixture 时间戳一旦成为过去，「正常」用例会被误判为无周窗口而莫名挂掉（原 fixture 的 1753200000 = 2025-07-22，已经是过去时间，一并更正）。
 
-`weekly-ok.json` — minimal shape:
+`weekly-ok.json` — 已按 Task 0 真实 shape 落盘（`secondary` 可为 `null`；`resetsAt` 为 Unix 秒）：
 
 ```json
 {
   "rateLimits": {
+    "limitId": "codex",
     "primary": {
       "usedPercent": 35,
       "windowDurationMins": 10080,
       "resetsAt": 1784419200
     },
-    "secondary": {
-      "usedPercent": 10,
-      "windowDurationMins": 180,
-      "resetsAt": 1784170800
-    }
-  }
+    "secondary": null,
+    "planType": "plus"
+  },
+  "rateLimitResetCredits": { "availableCount": 1 }
 }
 ```
 
 （1784419200 = 2026-07-19T00:00:00Z，晚于固定 fetchedAt 三天，满足「剩余 ≤ 8 天」规则。）
 
-`missing-weekly.json`:
+`missing-weekly.json` — 仅有 180 分钟窗口，无周窗口：
 
 ```json
 {
@@ -878,7 +905,8 @@ git commit -m "feat(core): 生成中文胶囊视图模型"
       "usedPercent": 10,
       "windowDurationMins": 180,
       "resetsAt": 1784170800
-    }
+    },
+    "secondary": null
   }
 }
 ```
