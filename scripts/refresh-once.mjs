@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { readFileSync } from "node:fs";
+import { readFileSync, writeFileSync } from "node:fs";
 import {
   buildCapsuleViewModel,
   predictRunway,
@@ -10,9 +10,16 @@ const args = process.argv.slice(2);
 const staleFromIdx = args.indexOf("--stale-from");
 const staleFromPath =
   staleFromIdx >= 0 ? args[staleFromIdx + 1] : undefined;
+const outIdx = args.indexOf("--out");
+const outPath = outIdx >= 0 ? args[outIdx + 1] : undefined;
 
 function writeResult(payload) {
-  process.stdout.write(JSON.stringify(payload));
+  const text = JSON.stringify(payload);
+  if (outPath) {
+    writeFileSync(outPath, text, "utf8");
+    return;
+  }
+  process.stdout.write(text);
 }
 
 try {

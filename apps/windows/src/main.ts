@@ -1,5 +1,7 @@
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { LogicalSize } from "@tauri-apps/api/dpi";
+import { invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
 import { placeholderModel, renderCapsule, type CapsuleViewModel } from "./render";
 
 let expanded = false;
@@ -20,8 +22,17 @@ function paint(): void {
   renderCapsule(root, model, expanded);
   root.querySelector("#refresh-btn")?.addEventListener("click", (event) => {
     event.stopPropagation();
-    // Task 10 will wire refresh_now; placeholder keeps UI interactive.
+    void refreshNow();
   });
+}
+
+async function refreshNow(): Promise<void> {
+  try {
+    const next = await invoke<CapsuleViewModel>("refresh_now");
+    applyViewModel(next);
+  } catch (error) {
+    console.error("refresh_now failed", error);
+  }
 }
 
 function bindDragAndToggle(root: HTMLElement): void {
@@ -65,14 +76,24 @@ function bindDragAndToggle(root: HTMLElement): void {
   root.addEventListener("pointercancel", endPointer);
 }
 
+function applyViewModel(next: CapsuleViewModel): void {
+  model = next;
+  paint();
+}
+
 window.addEventListener("DOMContentLoaded", () => {
   const root = document.querySelector<HTMLElement>("#capsule");
   if (!root) return;
   paint();
   bindDragAndToggle(root);
+
+  void listen<CapsuleViewModel>("quota://updated", (event) => {
+    applyViewModel(event.payload);
+  });
+
+  void invoke<CapsuleViewModel>("get_view_model")
+    .then(applyViewModel)
+    .catch(() => undefined);
 });
 
-export function applyViewModel(next: CapsuleViewModel): void {
-  model = next;
-  paint();
-}
+export { applyViewModel };
