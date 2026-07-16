@@ -9,7 +9,7 @@ import { fileURLToPath } from "node:url";
  */
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const destRoot = join(root, "node_modules", "@quota-capsule");
-const packages = ["core", "source-codex"];
+const packages = ["core", "source-codex", "source-cursor"];
 
 mkdirSync(destRoot, { recursive: true });
 

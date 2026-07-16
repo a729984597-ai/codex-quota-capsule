@@ -12,10 +12,10 @@
   "scripts": {
     "postinstall": "node scripts/sync-workspaces.mjs",
     "sync": "node scripts/sync-workspaces.mjs",
-    "build": "npm run build -w packages/core && npm run sync && npm run build -w packages/source-codex",
+    "build": "npm run build -w packages/core && npm run sync && npm run build -w packages/source-codex && npm run build -w packages/source-cursor",
     "test": "npm run build && vitest run",
-    "lint": "tsc -p packages/core/tsconfig.json --noEmit && tsc -p packages/source-codex/tsconfig.json --noEmit",
-    "refresh:once": "npm run build && node scripts/refresh-once.mjs",
+    "lint": "tsc -p packages/core/tsconfig.json --noEmit && tsc -p packages/source-codex/tsconfig.json --noEmit && tsc -p packages/source-cursor/tsconfig.json --noEmit",
+    "refresh:once": "npm run build && node --experimental-sqlite scripts/refresh-once.mjs",
     "stage:bridge": "node scripts/stage-bridge-resources.mjs",
     "copy:portable": "node scripts/copy-portable-to-root.mjs",
     "win:dev": "npm run tauri -w quota-capsule-windows -- dev",

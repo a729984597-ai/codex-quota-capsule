@@ -1,7 +1,7 @@
 use std::fs;
 use std::path::PathBuf;
 
-use crate::model::{LastSuccessFile, WindowPosition};
+use crate::model::{LastSuccessFile, ProviderPreference, WindowPosition};
 
 pub fn app_data_dir() -> PathBuf {
     let base = std::env::var_os("APPDATA")
@@ -48,4 +48,24 @@ pub fn read_window_position() -> Option<WindowPosition> {
     let path = window_position_path();
     let raw = fs::read_to_string(path).ok()?;
     serde_json::from_str(&raw).ok()
+}
+
+pub fn provider_preference_path() -> PathBuf {
+    app_data_dir().join("provider-preference.json")
+}
+
+pub fn write_provider_preference(pref: &ProviderPreference) -> Result<(), String> {
+    let dir = ensure_app_data_dir().map_err(|e| e.to_string())?;
+    let path = dir.join("provider-preference.json");
+    let json = serde_json::to_string_pretty(pref).map_err(|e| e.to_string())?;
+    fs::write(path, json).map_err(|e| e.to_string())
+}
+
+pub fn read_provider_preference() -> ProviderPreference {
+    let path = provider_preference_path();
+    let raw = match fs::read_to_string(path) {
+        Ok(v) => v,
+        Err(_) => return ProviderPreference::default(),
+    };
+    serde_json::from_str(&raw).unwrap_or_default()
 }

@@ -36,8 +36,8 @@ body {
   flex-direction: column;
   align-items: stretch;
   justify-content: center;
-  gap: 6px;
-  padding: 10px 12px;
+  gap: 4px;
+  padding: 8px 12px;
   cursor: default;
 }
 
@@ -62,9 +62,98 @@ body {
   background: #9aa0a6;
 }
 
+.tag {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: rgba(232, 234, 237, 0.55);
+  white-space: nowrap;
+}
+
+.usage-split {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.usage-line {
+  display: grid;
+  grid-template-columns: 92px 1fr 36px;
+  align-items: center;
+  gap: 8px;
+  font-size: 11px;
+  color: rgba(232, 234, 237, 0.78);
+}
+
+.usage-name {
+  white-space: nowrap;
+}
+
+.usage-bar {
+  height: 4px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.1);
+  overflow: hidden;
+}
+
+.usage-bar i {
+  display: block;
+  height: 100%;
+  background: #5b9cff;
+  border-radius: inherit;
+}
+
+.usage-pct {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+}
+
 .status {
   font-weight: 600;
   white-space: nowrap;
+}
+
+.capsule.dual {
+  flex-direction: column;
+  align-items: stretch;
+  justify-content: center;
+  gap: 2px;
+  padding: 4px 8px;
+}
+
+.dual-row,
+.dual-block {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.dual-block {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 4px;
+}
+
+.dual-row .countdown {
+  margin-left: auto;
+}
+
+.dual-row[data-tone="safe"] .dot,
+.dual-block[data-tone="safe"] .dot {
+  background: #34a853;
+}
+.dual-row[data-tone="watch"] .dot,
+.dual-block[data-tone="watch"] .dot {
+  background: #f9ab00;
+}
+.dual-row[data-tone="danger"] .dot,
+.dual-block[data-tone="danger"] .dot {
+  background: #ea4335;
+}
+.dual-row[data-tone="unknown"] .dot,
+.dual-block[data-tone="unknown"] .dot {
+  background: #9aa0a6;
 }
 
 .used,
@@ -72,6 +161,23 @@ body {
 .meta {
   color: rgba(232, 234, 237, 0.72);
   white-space: nowrap;
+}
+
+.pct {
+  color: #9aa0a6;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Each percent is colored by its own remaining quota. */
+.pct-safe {
+  color: #34a853;
+}
+.pct-watch {
+  color: #f9ab00;
+}
+.pct-danger {
+  color: #ea4335;
 }
 
 .countdown {

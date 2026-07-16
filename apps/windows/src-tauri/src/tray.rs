@@ -1,15 +1,112 @@
-use tauri::menu::{Menu, MenuItem};
+use tauri::menu::{CheckMenuItem, ContextMenu, Menu, MenuItem, PredefinedMenuItem, Submenu};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
 use tauri::{AppHandle, Manager};
 
-use crate::refresh::{run_refresh, AppState};
+use crate::refresh::{current_provider_mode, run_refresh, set_provider_mode, AppState};
+
+/// Right-click context menu on the capsule window (replaces the WebView2
+/// default). Items use "ctx_" ids so they don't collide with the tray menu.
+#[tauri::command]
+pub fn show_context_menu(window: tauri::Window) -> Result<(), String> {
+    let app = window.app_handle().clone();
+    let mode = current_provider_mode(&app);
+
+    let build = || -> tauri::Result<Menu<tauri::Wry>> {
+        let refresh_i =
+            MenuItem::with_id(&app, "ctx_refresh", "立即刷新", true, None::<&str>)?;
+        let hide_i = MenuItem::with_id(&app, "ctx_hide", "隐藏胶囊", true, None::<&str>)?;
+        let auto_i = CheckMenuItem::with_id(
+            &app, "ctx_prov_auto", "自动", true, mode == "auto", None::<&str>,
+        )?;
+        let cursor_i = CheckMenuItem::with_id(
+            &app, "ctx_prov_cursor", "仅 Cursor", true, mode == "cursor", None::<&str>,
+        )?;
+        let codex_i = CheckMenuItem::with_id(
+            &app, "ctx_prov_codex", "仅 Codex", true, mode == "codex", None::<&str>,
+        )?;
+        let both_i = CheckMenuItem::with_id(
+            &app, "ctx_prov_both", "都显示", true, mode == "both", None::<&str>,
+        )?;
+        let provider_menu = Submenu::with_items(
+            &app,
+            "监控源",
+            true,
+            &[&auto_i, &cursor_i, &codex_i, &both_i],
+        )?;
+        let sep = PredefinedMenuItem::separator(&app)?;
+        let quit_i = MenuItem::with_id(&app, "ctx_quit", "退出", true, None::<&str>)?;
+        Menu::with_items(&app, &[&refresh_i, &hide_i, &sep, &provider_menu, &sep, &quit_i])
+    };
+
+    let menu = build().map_err(|e| e.to_string())?;
+    menu.popup(window).map_err(|e| e.to_string())
+}
+
+/// Handle context-menu item clicks (registered via `app.on_menu_event`).
+pub fn handle_context_menu_event(app: &AppHandle, id: &str) {
+    match id {
+        "ctx_refresh" => {
+            let handle = app.clone();
+            let _ = std::thread::spawn(move || {
+                let _ = run_refresh(&handle);
+            });
+        }
+        "ctx_hide" => {
+            if let Some(win) = app.get_webview_window("main") {
+                let _ = win.hide();
+            }
+        }
+        "ctx_prov_auto" | "ctx_prov_cursor" | "ctx_prov_codex" | "ctx_prov_both" => {
+            let mode = id.trim_start_matches("ctx_prov_").to_string();
+            let handle = app.clone();
+            let _ = std::thread::spawn(move || {
+                let _ = set_provider_mode(&handle, &mode);
+            });
+        }
+        "ctx_quit" => {
+            app.exit(0);
+        }
+        _ => {}
+    }
+}
 
 pub fn setup_tray(app: &AppHandle) -> tauri::Result<()> {
     let show_i = MenuItem::with_id(app, "show", "显示胶囊", true, None::<&str>)?;
     let hide_i = MenuItem::with_id(app, "hide", "隐藏胶囊", true, None::<&str>)?;
     let refresh_i = MenuItem::with_id(app, "refresh", "立即刷新", true, None::<&str>)?;
     let quit_i = MenuItem::with_id(app, "quit", "退出", true, None::<&str>)?;
-    let menu = Menu::with_items(app, &[&show_i, &hide_i, &refresh_i, &quit_i])?;
+
+    let mode = current_provider_mode(app);
+    let auto_i = CheckMenuItem::with_id(app, "prov_auto", "自动", true, mode == "auto", None::<&str>)?;
+    let cursor_i =
+        CheckMenuItem::with_id(app, "prov_cursor", "仅 Cursor", true, mode == "cursor", None::<&str>)?;
+    let codex_i =
+        CheckMenuItem::with_id(app, "prov_codex", "仅 Codex", true, mode == "codex", None::<&str>)?;
+    let both_i =
+        CheckMenuItem::with_id(app, "prov_both", "都显示", true, mode == "both", None::<&str>)?;
+    let provider_menu = Submenu::with_items(
+        app,
+        "监控源",
+        true,
+        &[&auto_i, &cursor_i, &codex_i, &both_i],
+    )?;
+
+    if let Some(state) = app.try_state::<AppState>() {
+        if let Ok(mut guard) = state.provider_menu_items.lock() {
+            *guard = Some(crate::refresh::ProviderMenuItems {
+                auto: auto_i.clone(),
+                cursor: cursor_i.clone(),
+                codex: codex_i.clone(),
+                both: both_i.clone(),
+            });
+        }
+    }
+
+    let sep = PredefinedMenuItem::separator(app)?;
+    let menu = Menu::with_items(
+        app,
+        &[&show_i, &hide_i, &refresh_i, &sep, &provider_menu, &sep, &quit_i],
+    )?;
 
     let tooltip = app
         .try_state::<AppState>()
@@ -37,6 +134,30 @@ pub fn setup_tray(app: &AppHandle) -> tauri::Result<()> {
                 let handle = app.clone();
                 let _ = std::thread::spawn(move || {
                     let _ = run_refresh(&handle);
+                });
+            }
+            "prov_auto" => {
+                let handle = app.clone();
+                let _ = std::thread::spawn(move || {
+                    let _ = set_provider_mode(&handle, "auto");
+                });
+            }
+            "prov_cursor" => {
+                let handle = app.clone();
+                let _ = std::thread::spawn(move || {
+                    let _ = set_provider_mode(&handle, "cursor");
+                });
+            }
+            "prov_codex" => {
+                let handle = app.clone();
+                let _ = std::thread::spawn(move || {
+                    let _ = set_provider_mode(&handle, "codex");
+                });
+            }
+            "prov_both" => {
+                let handle = app.clone();
+                let _ = std::thread::spawn(move || {
+                    let _ = set_provider_mode(&handle, "both");
                 });
             }
             "quit" => {

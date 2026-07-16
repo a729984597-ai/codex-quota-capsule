@@ -9,8 +9,11 @@ use std::os::windows::process::CommandExt;
 
 use tauri::{AppHandle, Emitter, Manager, State};
 
-use crate::model::{CapsuleViewModel, LastSuccessFile, RefreshPayload};
-use crate::persist::{last_success_path, read_last_success, write_last_success};
+use crate::model::{CapsuleViewModel, LastSuccessFile, ProviderPreference, RefreshPayload};
+use crate::persist::{
+    last_success_path, read_last_success, read_provider_preference, write_last_success,
+    write_provider_preference,
+};
 
 #[cfg(windows)]
 const CREATE_NO_WINDOW: u32 = 0x0800_0000;
@@ -23,20 +26,112 @@ pub struct AppState {
     pub consecutive_failures: Mutex<u32>,
     pub node_path: Mutex<Option<PathBuf>>,
     pub workspace_root: Mutex<PathBuf>,
+    pub provider_mode: Mutex<String>,
+    pub last_auto_provider: Mutex<String>,
+    pub provider_menu_items: Mutex<Option<ProviderMenuItems>>,
     pub refresh_in_flight: AtomicBool,
     pub last_success_at: Mutex<Option<Instant>>,
 }
 
+#[derive(Clone)]
+pub struct ProviderMenuItems {
+    pub auto: tauri::menu::CheckMenuItem<tauri::Wry>,
+    pub cursor: tauri::menu::CheckMenuItem<tauri::Wry>,
+    pub codex: tauri::menu::CheckMenuItem<tauri::Wry>,
+    pub both: tauri::menu::CheckMenuItem<tauri::Wry>,
+}
+
+impl ProviderMenuItems {
+    pub fn set_checked(&self, mode: &str) {
+        let _ = self.auto.set_checked(mode == "auto");
+        let _ = self.cursor.set_checked(mode == "cursor");
+        let _ = self.codex.set_checked(mode == "codex");
+        let _ = self.both.set_checked(mode == "both");
+    }
+}
+
 impl AppState {
     pub fn new(workspace_root: PathBuf) -> Self {
+        let pref = read_provider_preference();
         Self {
             view_model: Mutex::new(CapsuleViewModel::placeholder()),
             consecutive_failures: Mutex::new(0),
             node_path: Mutex::new(resolve_node_path()),
             workspace_root: Mutex::new(workspace_root),
+            provider_mode: Mutex::new(pref.mode),
+            last_auto_provider: Mutex::new("codex".into()),
+            provider_menu_items: Mutex::new(None),
             refresh_in_flight: AtomicBool::new(false),
             last_success_at: Mutex::new(None),
         }
+    }
+}
+
+pub fn set_provider_mode(app: &AppHandle, mode: &str) -> Result<(), String> {
+    let normalized = match mode {
+        "auto" | "cursor" | "codex" | "both" => mode,
+        _ => return Err(format!("unsupported provider mode: {mode}")),
+    };
+    write_provider_preference(&ProviderPreference {
+        mode: normalized.into(),
+    })?;
+    {
+        let state = app.state::<AppState>();
+        *state.provider_mode.lock().map_err(|e| e.to_string())? = normalized.into();
+        let items_opt = state
+            .provider_menu_items
+            .lock()
+            .map_err(|e| e.to_string())?
+            .clone();
+        if let Some(items) = items_opt {
+            items.set_checked(normalized);
+        }
+    }
+    let _ = run_refresh(app);
+    Ok(())
+}
+
+pub fn current_provider_mode(app: &AppHandle) -> String {
+    app.state::<AppState>()
+        .provider_mode
+        .lock()
+        .map(|g| g.clone())
+        .unwrap_or_else(|_| "auto".into())
+}
+
+/// Lightweight foreground poll for "auto" mode. When the focused app's
+/// provider changes, update the remembered choice and trigger a refresh so
+/// the capsule switches sources promptly instead of waiting for the 60s loop.
+pub fn poll_auto_switch(app: &AppHandle) {
+    let state = app.state::<AppState>();
+    let mode = match state.provider_mode.lock() {
+        Ok(g) => g.clone(),
+        Err(_) => return,
+    };
+    if mode != "auto" {
+        return;
+    }
+    let detected = crate::foreground::foreground_provider();
+    let next = match detected {
+        Some(p) => p.to_string(),
+        None => return,
+    };
+    let changed = match state.last_auto_provider.lock() {
+        Ok(mut g) => {
+            if *g == next {
+                false
+            } else {
+                *g = next.clone();
+                true
+            }
+        }
+        Err(_) => return,
+    };
+    if changed {
+        let handle = app.clone();
+        let _ = std::thread::spawn(move || {
+            let _ = run_refresh(&handle);
+        });
     }
 }
 
@@ -146,7 +241,33 @@ fn refresh_inner(app: &AppHandle) -> Result<CapsuleViewModel, String> {
         return Ok(vm);
     }
 
-    let live = spawn_refresh(&node, &script, None)?;
+    let provider_mode = state
+        .provider_mode
+        .lock()
+        .map_err(|e| e.to_string())?
+        .clone();
+
+    // Resolve "auto" by foreground window; keep last choice when undecided.
+    let effective_provider = if provider_mode == "auto" {
+        let resolved = crate::foreground::foreground_provider();
+        let next = match resolved {
+            Some(p) => p.to_string(),
+            None => state
+                .last_auto_provider
+                .lock()
+                .map_err(|e| e.to_string())?
+                .clone(),
+        };
+        *state
+            .last_auto_provider
+            .lock()
+            .map_err(|e| e.to_string())? = next.clone();
+        next
+    } else {
+        provider_mode.clone()
+    };
+
+    let live = spawn_refresh(&node, &script, &root, &effective_provider, None)?;
     if live.ok {
         let vm = live.view_model.clone();
         let _ = write_last_success(&LastSuccessFile {
@@ -162,7 +283,7 @@ fn refresh_inner(app: &AppHandle) -> Result<CapsuleViewModel, String> {
     // Failure path: try stale rebuild via bridge
     let stale_path = last_success_path();
     let stale_payload = if stale_path.exists() {
-        spawn_refresh(&node, &script, Some(&stale_path)).ok()
+        spawn_refresh(&node, &script, &root, &effective_provider, Some(&stale_path)).ok()
     } else {
         None
     };
@@ -225,6 +346,8 @@ fn refresh_inner(app: &AppHandle) -> Result<CapsuleViewModel, String> {
 fn spawn_refresh(
     node: &Path,
     script: &Path,
+    bridge_root: &Path,
+    provider_mode: &str,
     stale_from: Option<&Path>,
 ) -> Result<RefreshPayload, String> {
     let out_path = std::env::temp_dir().join(format!(
@@ -233,10 +356,14 @@ fn spawn_refresh(
     ));
     let mut cmd = Command::new(node);
     cmd.arg(script);
+    cmd.arg("--provider").arg(provider_mode);
     if let Some(path) = stale_from {
         cmd.arg("--stale-from").arg(path);
     }
     cmd.arg("--out").arg(&out_path);
+    // Node 22 built-in sqlite is still experimental; required for large Cursor DBs.
+    cmd.env("NODE_OPTIONS", "--experimental-sqlite");
+    cmd.current_dir(bridge_root);
     #[cfg(windows)]
     cmd.creation_flags(CREATE_NO_WINDOW);
 

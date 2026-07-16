@@ -1,3 +1,4 @@
+mod foreground;
 mod model;
 mod persist;
 mod refresh;
@@ -11,9 +12,38 @@ use tauri_plugin_single_instance::init as single_instance_init;
 use crate::model::WindowPosition;
 use crate::persist::{read_window_position, write_window_position};
 use crate::refresh::{
-    apply_bridge_root, detect_workspace_root, get_view_model, refresh_now, run_refresh, AppState,
+    apply_bridge_root, detect_workspace_root, get_view_model, poll_auto_switch, refresh_now,
+    run_refresh, AppState,
 };
-use crate::tray::setup_tray;
+use crate::tray::{handle_context_menu_event, setup_tray, show_context_menu};
+
+/// Re-insert the window into the topmost band. `set_always_on_top(true)` is a
+/// no-op when the flag is already set, so shell flyouts (tray overflow etc.)
+/// that push us down need an explicit SetWindowPos.
+#[cfg(windows)]
+fn force_topmost(win: &tauri::WebviewWindow) {
+    use windows_sys::Win32::UI::WindowsAndMessaging::{
+        SetWindowPos, HWND_TOPMOST, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE,
+    };
+    if let Ok(hwnd) = win.hwnd() {
+        unsafe {
+            SetWindowPos(
+                hwnd.0 as _,
+                HWND_TOPMOST,
+                0,
+                0,
+                0,
+                0,
+                SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE,
+            );
+        }
+    }
+}
+
+#[cfg(not(windows))]
+fn force_topmost(win: &tauri::WebviewWindow) {
+    let _ = win.set_always_on_top(true);
+}
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -34,12 +64,21 @@ pub fn run() {
             }
         }))
         .manage(AppState::new(workspace_root))
-        .invoke_handler(tauri::generate_handler![refresh_now, get_view_model])
+        .invoke_handler(tauri::generate_handler![
+            refresh_now,
+            get_view_model,
+            show_context_menu
+        ])
         .setup(|app| {
             // Packaged .exe: prefer bundled resources next to the binary.
             apply_bridge_root(app.handle());
 
             setup_tray(app.handle())?;
+
+            // Context menu (right-click on the capsule) events.
+            app.on_menu_event(|app, event| {
+                handle_context_menu_event(app, event.id.as_ref());
+            });
 
             if let Some(win) = app.get_webview_window("main") {
                 // Undecorated + shadow on Windows draws a 1px white frame / uneven corners.
@@ -56,6 +95,13 @@ pub fn run() {
                             x: position.x as f64,
                             y: position.y as f64,
                         });
+                    }
+                    // Shell flyouts (tray overflow etc.) can knock the capsule
+                    // out of the topmost band; re-assert when we lose focus.
+                    if let tauri::WindowEvent::Focused(false) = event {
+                        if let Some(w) = app_handle.get_webview_window("main") {
+                            force_topmost(&w);
+                        }
                     }
                     if let tauri::WindowEvent::CloseRequested { api, .. } = event {
                         // Hide to tray instead of quitting
@@ -85,6 +131,19 @@ pub fn run() {
             std::thread::spawn(move || loop {
                 std::thread::sleep(Duration::from_secs(60));
                 let _ = run_refresh(&handle);
+            });
+
+            // 3s foreground poll so "auto" mode switches sources promptly;
+            // also re-assert topmost so shell flyouts can't bury us.
+            let handle = app.handle().clone();
+            std::thread::spawn(move || loop {
+                std::thread::sleep(Duration::from_secs(3));
+                poll_auto_switch(&handle);
+                if let Some(win) = handle.get_webview_window("main") {
+                    if win.is_visible().unwrap_or(false) {
+                        force_topmost(&win);
+                    }
+                }
             });
 
             Ok(())

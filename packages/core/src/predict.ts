@@ -1,9 +1,9 @@
 import type { AgentQuotaSnapshot, RunwayForecast } from "./model.js";
 
 const WEEK_MINUTES = 10_080;
-const EARLY_HOURS = 2;
-const RUNNING_FAST_RATIO = 1;
-const MAY_RUN_OUT_RATIO = 1.3;
+// Remaining-quota thresholds (percent).
+const LOW_REMAINING = 30;
+const CRITICAL_REMAINING = 10;
 
 export function predictRunway(
   snapshot: AgentQuotaSnapshot,
@@ -53,24 +53,21 @@ export function predictRunway(
 
   const cycleRatePerHour = used / elapsedHours;
   const sustainableRatePerHour = remaining / hoursUntilReset;
-  const paceRatio = cycleRatePerHour / sustainableRatePerHour;
   const projectedRemainingAtReset = remaining - cycleRatePerHour * hoursUntilReset;
 
+  // Classify purely by how much quota is left.
   let state: RunwayForecast["state"];
   let confidenceReason: string;
 
-  if (elapsedHours < EARLY_HOURS || used < 0.5) {
-    state = "earlyEstimate";
-    confidenceReason = used < 0.5 ? "no-consumption-observed" : "cycle-only-sparse";
-  } else if (paceRatio > MAY_RUN_OUT_RATIO) {
+  if (remaining < CRITICAL_REMAINING) {
     state = "mayRunOut";
-    confidenceReason = "pace-far-above-sustainable";
-  } else if (paceRatio > RUNNING_FAST_RATIO) {
+    confidenceReason = "remaining-critical";
+  } else if (remaining < LOW_REMAINING) {
     state = "runningFast";
-    confidenceReason = "pace-above-sustainable";
+    confidenceReason = "remaining-low";
   } else {
     state = "onTrack";
-    confidenceReason = "pace-sustainable";
+    confidenceReason = "remaining-sufficient";
   }
 
   return {

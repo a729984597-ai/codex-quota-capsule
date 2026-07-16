@@ -27,6 +27,8 @@ describe("buildCapsuleViewModel", () => {
     expect(vm.statusLabel).toBe("够用");
     expect(vm.usedPercent).toBe(40);
     expect(vm.isStale).toBe(false);
+    expect(vm.provider).toBe("codex");
+    expect(vm.displayMode).toBe("single");
   });
 
   it("marks stale last-success as dataUnavailable tone unknown", () => {

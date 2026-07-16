@@ -2,7 +2,12 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 import { LogicalSize } from "@tauri-apps/api/dpi";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
-import { placeholderModel, renderCapsule, type CapsuleViewModel } from "./render";
+import {
+  capsuleHeights,
+  placeholderModel,
+  renderCapsule,
+  type CapsuleViewModel,
+} from "./render";
 
 let expanded = false;
 let model: CapsuleViewModel = placeholderModel();
@@ -10,10 +15,14 @@ let refreshing = false;
 
 const DRAG_THRESHOLD_PX = 4;
 
+async function resizeForModel(): Promise<void> {
+  const { width, height } = capsuleHeights(model, expanded);
+  await getCurrentWindow().setSize(new LogicalSize(width, height));
+}
+
 async function setExpanded(next: boolean): Promise<void> {
   expanded = next;
-  const win = getCurrentWindow();
-  await win.setSize(new LogicalSize(280, expanded ? 140 : 64));
+  await resizeForModel();
   paint();
 }
 
@@ -85,7 +94,7 @@ function bindDragAndToggle(root: HTMLElement): void {
 
 function applyViewModel(next: CapsuleViewModel): void {
   model = next;
-  paint();
+  void resizeForModel().then(paint);
 }
 
 window.addEventListener("DOMContentLoaded", () => {
@@ -93,6 +102,12 @@ window.addEventListener("DOMContentLoaded", () => {
   if (!root) return;
   paint();
   bindDragAndToggle(root);
+
+  // Replace the WebView2 default context menu with the app menu.
+  window.addEventListener("contextmenu", (event) => {
+    event.preventDefault();
+    void invoke("show_context_menu").catch(() => undefined);
+  });
 
   void listen<CapsuleViewModel>("quota://updated", (event) => {
     applyViewModel(event.payload);
