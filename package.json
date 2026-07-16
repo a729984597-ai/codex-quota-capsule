@@ -15,7 +15,9 @@
     "build": "npm run build -w packages/core && npm run sync && npm run build -w packages/source-codex",
     "test": "npm run build && vitest run",
     "lint": "tsc -p packages/core/tsconfig.json --noEmit && tsc -p packages/source-codex/tsconfig.json --noEmit",
-    "refresh:once": "npm run build && node scripts/refresh-once.mjs"
+    "refresh:once": "npm run build && node scripts/refresh-once.mjs",
+    "win:dev": "npm run tauri -w quota-capsule-windows -- dev",
+    "win:build": "npm run tauri -w quota-capsule-windows -- build"
   },
   "devDependencies": {
     "@types/node": "^20.19.2",

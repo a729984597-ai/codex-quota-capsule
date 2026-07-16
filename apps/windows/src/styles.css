@@ -1,0 +1,109 @@
+:root {
+  color: #e8eaed;
+  font-family: "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+  font-size: 12px;
+  line-height: 1.3;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  background: transparent;
+  overflow: hidden;
+  width: 100%;
+  height: 100%;
+}
+
+.capsule {
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  height: 100%;
+  padding: 0 12px;
+  border-radius: 14px;
+  background: rgba(28, 30, 34, 0.92);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  user-select: none;
+  cursor: grab;
+}
+
+.capsule.expanded {
+  flex-direction: column;
+  align-items: stretch;
+  justify-content: center;
+  gap: 6px;
+  padding: 10px 12px;
+  cursor: default;
+}
+
+.dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  background: #9aa0a6;
+}
+
+.capsule[data-tone="safe"] .dot {
+  background: #34a853;
+}
+.capsule[data-tone="watch"] .dot {
+  background: #f9ab00;
+}
+.capsule[data-tone="danger"] .dot {
+  background: #ea4335;
+}
+.capsule[data-tone="unknown"] .dot {
+  background: #9aa0a6;
+}
+
+.status {
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.used,
+.countdown,
+.meta {
+  color: rgba(232, 234, 237, 0.72);
+  white-space: nowrap;
+}
+
+.countdown {
+  margin-left: auto;
+}
+
+.expanded-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.judgment {
+  margin: 0;
+  color: rgba(232, 234, 237, 0.9);
+}
+
+.meta {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 11px;
+}
+
+.refresh {
+  align-self: flex-end;
+  border: 0;
+  border-radius: 8px;
+  padding: 4px 10px;
+  background: rgba(255, 255, 255, 0.12);
+  color: inherit;
+  cursor: pointer;
+}
+
+.refresh:hover {
+  background: rgba(255, 255, 255, 0.18);
+}
