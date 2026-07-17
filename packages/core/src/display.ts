@@ -73,7 +73,10 @@ export function buildCapsuleViewModel(input: BuildViewModelInput): CapsuleViewMo
     state,
     tone: TONE[state],
     statusLabel: STATUS[state],
-    judgmentText: judgmentFor(input.forecast, input.usageBreakdown),
+    judgmentText:
+      state === "dataUnavailable"
+        ? unavailableJudgment(input.diagnosticCode)
+        : judgmentFor(input.forecast, input.usageBreakdown),
     usedPercent: input.forecast.usedPercent,
     usageBreakdown: input.usageBreakdown ?? null,
     resetCountdownText: formatCountdown(input.resetsAt, now),
@@ -173,6 +176,23 @@ function pickFreshest(a: ProviderSlice, b: ProviderSlice): string {
   return a.freshnessText;
 }
 
+function unavailableJudgment(code?: DiagnosticCode | null): string {
+  switch (code) {
+    case "node_missing":
+      return "未找到 Node 运行时。请使用完整绿色版（含 resources），或安装系统 Node.js 22+。";
+    case "cli_missing":
+      return "未找到对应客户端数据。Codex 请安装 CLI；Cursor 请确认本机已安装并打开过 Cursor。";
+    case "auth_required":
+      return "未登录或登录已失效。请在 Codex（codex login）或 Cursor 内重新登录后点刷新。";
+    case "timeout":
+      return "读取超时，请稍后在托盘选择「立即刷新」，或检查网络。";
+    case "stale":
+      return "正在显示上次成功的额度数据，恢复实时读取前暂不判断消耗速度。";
+    default:
+      return "暂时没有可用的额度数据。可在托盘切换「仅 Cursor / 仅 Codex / 都显示」并确认已登录。";
+  }
+}
+
 function judgmentFor(
   f: RunwayForecast,
   breakdown?: UsageBreakdown | null,
@@ -184,7 +204,7 @@ function judgmentFor(
       : "";
   switch (f.state) {
     case "dataUnavailable":
-      return "暂时没有可用的额度周期数据";
+      return unavailableJudgment(null);
     case "exhausted":
       return `本周期额度已用尽，重置后会自动恢复${split}`;
     case "earlyEstimate":

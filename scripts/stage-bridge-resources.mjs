@@ -48,4 +48,14 @@ cpSync(
   join(destRoot, "scripts", "refresh-once.mjs"),
 );
 
+const bundle = spawnSync("node", [join(root, "scripts", "bundle-node-runtime.mjs")], {
+  cwd: root,
+  stdio: "inherit",
+  shell: true,
+  env: process.env,
+});
+if (bundle.status !== 0) {
+  process.exit(bundle.status ?? 1);
+}
+
 console.log(`staged bridge resources → ${destRoot}`);

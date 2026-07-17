@@ -170,12 +170,20 @@ export function renderCapsule(
   const tag = providerLabel(model.provider);
 
   if (!expanded) {
+    const hint =
+      model.state === "dataUnavailable"
+        ? escapeHtml(model.judgmentText)
+        : escapeHtml(model.resetCountdownText);
     root.innerHTML = `
       <span class="dot" aria-hidden="true"></span>
       <span class="tag">${escapeHtml(tag)}</span>
       <span class="status">${escapeHtml(model.statusLabel)}</span>
       <span class="used">${used}</span>
-      <span class="countdown">${escapeHtml(model.resetCountdownText)}</span>
+      <span class="countdown" title="${hint}">${
+        model.state === "dataUnavailable"
+          ? escapeHtml(shortUnavailableHint(model.diagnosticCode))
+          : escapeHtml(model.resetCountdownText)
+      }</span>
     `;
     return;
   }
@@ -365,6 +373,21 @@ export function capsuleHeights(
   }
   // Single provider with one usage bar (e.g. codex).
   return { width: expanded ? 340 : 300, height: expanded ? 135 : 36 };
+}
+
+function shortUnavailableHint(code: string | null): string {
+  switch (code) {
+    case "node_missing":
+      return "缺 Node 运行时";
+    case "cli_missing":
+      return "未找到客户端";
+    case "auth_required":
+      return "请先登录";
+    case "timeout":
+      return "读取超时";
+    default:
+      return "点开查看原因";
+  }
 }
 
 function escapeHtml(value: string): string {

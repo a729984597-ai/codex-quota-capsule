@@ -361,23 +361,99 @@ pub fn poll_auto_switch(app: &AppHandle) {
 }
 
 pub fn resolve_node_path() -> Option<PathBuf> {
-    if let Ok(output) = Command::new("where").arg("node").output() {
-        if output.status.success() {
-            let text = String::from_utf8_lossy(&output.stdout);
-            if let Some(line) = text.lines().next() {
-                let path = PathBuf::from(line.trim());
-                if path.exists() {
-                    return Some(path);
+    resolve_node_path_near(None)
+}
+
+/// Prefer the Node runtime bundled next to the bridge (`runtime/node/node.exe`),
+/// then fall back to a system install.
+pub fn resolve_node_path_near(bridge_root: Option<&Path>) -> Option<PathBuf> {
+    if let Some(root) = bridge_root {
+        let bundled = root.join("runtime").join("node").join("node.exe");
+        if bundled.is_file() {
+            return Some(bundled);
+        }
+    }
+
+    // 1) Current process PATH via `where`
+    if let Some(p) = node_from_where() {
+        return Some(p);
+    }
+
+    // 2) Well-known install locations (GUI apps often miss a freshly updated PATH)
+    for candidate in known_node_candidates() {
+        if candidate.is_file() {
+            return Some(candidate);
+        }
+    }
+
+    // 3) Merge Machine+User PATH from the environment registry, then look again
+    if let Some(p) = node_from_refreshed_path() {
+        return Some(p);
+    }
+
+    None
+}
+
+fn node_from_where() -> Option<PathBuf> {
+    let output = Command::new("where").arg("node").output().ok()?;
+    if !output.status.success() {
+        return None;
+    }
+    let text = String::from_utf8_lossy(&output.stdout);
+    let line = text.lines().next()?.trim();
+    if line.is_empty() {
+        return None;
+    }
+    let path = PathBuf::from(line);
+    path.is_file().then_some(path)
+}
+
+fn known_node_candidates() -> Vec<PathBuf> {
+    let mut out = Vec::new();
+    out.push(PathBuf::from(r"C:\Program Files\nodejs\node.exe"));
+    out.push(PathBuf::from(r"C:\Program Files (x86)\nodejs\node.exe"));
+    if let Ok(local) = std::env::var("LOCALAPPDATA") {
+        out.push(PathBuf::from(&local).join(r"Programs\node\node.exe"));
+    }
+    if let Ok(user) = std::env::var("USERPROFILE") {
+        out.push(PathBuf::from(&user).join(r"scoop\apps\nodejs\current\node.exe"));
+        out.push(PathBuf::from(&user).join(r"scoop\apps\nodejs-lts\current\node.exe"));
+        // nvm-windows: %APPDATA%\nvm\<version>\node.exe — probe symlink/current if present
+        if let Ok(appdata) = std::env::var("APPDATA") {
+            let nvm = PathBuf::from(appdata).join("nvm");
+            out.push(nvm.join("nodejs").join("node.exe"));
+            if let Ok(entries) = std::fs::read_dir(&nvm) {
+                for entry in entries.flatten() {
+                    let p = entry.path().join("node.exe");
+                    if p.is_file() {
+                        out.push(p);
+                    }
                 }
             }
         }
     }
-    let fallback = PathBuf::from(r"C:\Program Files\nodejs\node.exe");
-    if fallback.exists() {
-        Some(fallback)
-    } else {
-        None
+    out
+}
+
+fn node_from_refreshed_path() -> Option<PathBuf> {
+    // Pull Machine+User PATH (not the stale PATH inherited by a desktop-launched exe).
+    let output = Command::new("powershell")
+        .args([
+            "-NoProfile",
+            "-ExecutionPolicy",
+            "Bypass",
+            "-Command",
+            "$m=[Environment]::GetEnvironmentVariable('Path','Machine');$u=[Environment]::GetEnvironmentVariable('Path','User');$env:Path=\"$m;$u\";(Get-Command node -ErrorAction SilentlyContinue).Source",
+        ])
+        .output()
+        .ok()?;
+    if !output.status.success() {
+        return None;
     }
+    let text = String::from_utf8_lossy(&output.stdout);
+    let line = text.lines().map(str::trim).find(|l| !l.is_empty())?;
+    let path = PathBuf::from(line);
+    path.is_file().then_some(path)
 }
 
 fn script_path(root: &Path) -> PathBuf {
@@ -446,23 +522,44 @@ pub fn run_refresh(app: &AppHandle) -> Result<CapsuleViewModel, String> {
 
 fn refresh_inner(app: &AppHandle) -> Result<CapsuleViewModel, String> {
     let state = app.state::<AppState>();
-    let node = state
-        .node_path
-        .lock()
-        .map_err(|e| e.to_string())?
-        .clone();
-
-    let Some(node) = node else {
-        let vm = CapsuleViewModel::node_missing();
-        publish(app, &state, vm.clone(), false)?;
-        return Ok(vm);
-    };
-
+    // Prefer bundled Node beside the bridge; re-probe when missing so a mid-session
+    // install (or late bridge-root apply) can recover after「立即刷新」.
     let root = state
         .workspace_root
         .lock()
         .map_err(|e| e.to_string())?
         .clone();
+    let node = {
+        let mut guard = state.node_path.lock().map_err(|e| e.to_string())?;
+        let bundled = root.join("runtime").join("node").join("node.exe");
+        if bundled.is_file() {
+            *guard = Some(bundled.clone());
+            Some(bundled)
+        } else if guard.is_none() {
+            let found = resolve_node_path_near(Some(&root));
+            *guard = found.clone();
+            found
+        } else {
+            guard.clone()
+        }
+    };
+
+    let Some(node) = node else {
+        let mode = state
+            .provider_mode
+            .lock()
+            .map(|g| g.clone())
+            .unwrap_or_else(|_| "auto".into());
+        let label = match mode.as_str() {
+            "cursor" => "cursor",
+            "both" => "both",
+            _ => "codex",
+        };
+        let vm = CapsuleViewModel::node_missing(label);
+        publish(app, &state, vm.clone(), false)?;
+        return Ok(vm);
+    };
+
     let script = script_path(&root);
     if !script.exists() {
         let mut vm = CapsuleViewModel::placeholder();

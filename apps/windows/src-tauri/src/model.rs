@@ -80,17 +80,26 @@ impl CapsuleViewModel {
         }
     }
 
-    pub fn node_missing() -> Self {
+    pub fn node_missing(provider: &str) -> Self {
+        let provider = match provider {
+            "cursor" => "cursor",
+            "both" => "both",
+            _ => "codex",
+        };
         Self {
-            provider: "codex".into(),
-            display_mode: "single".into(),
+            provider: provider.into(),
+            display_mode: if provider == "both" {
+                "both".into()
+            } else {
+                "single".into()
+            },
             state: "dataUnavailable".into(),
             tone: "unknown".into(),
             status_label: "数据暂不可用".into(),
-            judgment_text: "未找到 Node.js，无法刷新额度数据".into(),
+            judgment_text: "未找到 Node 运行时。请使用完整绿色版（含 resources/runtime/node），或安装系统 Node.js 22+ 后重试。".into(),
             used_percent: None,
             usage_breakdown: None,
-            reset_countdown_text: "重置时间未知".into(),
+            reset_countdown_text: "缺 Node 运行时".into(),
             freshness_text: "尚未成功读取".into(),
             is_stale: false,
             diagnostic_code: Some("node_missing".into()),

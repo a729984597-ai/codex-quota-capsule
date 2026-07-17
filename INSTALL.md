@@ -2,16 +2,28 @@
 
 ## 最终用户（推荐：下载绿色版）
 
-不需要从源码编译。到 GitHub **Releases** 下载 `Quota-Capsule-Beta-windows-portable.zip`：
+不需要从源码编译，也**不必单独安装 Node.js**（绿色版已内置 Node 22 运行时）。
+
+到 GitHub **Releases** 下载 `Quota-Capsule-Beta-windows-portable.zip`：
 
 1. 打开仓库 → **Releases**
 2. 下载最新的 `Quota-Capsule-Beta-windows-portable.zip`
-3. 解压后双击 `Quota Capsule Beta.exe`（需保留同目录 `resources/`）
-4. 安装 [Node.js 22+](https://nodejs.org/)（刷新额度桥接需要）
-5. （可选）本机已登录 Codex（`codex login`）和/或 Cursor
+3. 解压后双击 `Quota Capsule Beta.exe`（需保留同目录 `resources/`，内含桥接脚本与 Node）
+4. （可选）本机已登录 Codex（`codex login`）和/或 Cursor
 
 > 未签名安装包可能被 SmartScreen 拦截，选择「仍要运行」即可。  
 > `git clone` **不会**带上 exe（体积大，已忽略）；要「下载即用」请走 Releases。
+
+### 别的电脑「没效果」时先核对
+
+托盘出现蓝色图标 = 应用已启动。若胶囊显示「数据暂不可用」，按下面排查：
+
+1. **解压完整**：`Quota Capsule Beta.exe` 与同目录 `resources/` 必须在一起（`resources/runtime/node/node.exe` 应存在）
+2. 托盘右键 → **监控源**：
+   - 主要用 Cursor → 选「仅 Cursor」或「都显示」（并确保本机已登录 Cursor）
+   - 主要用 Codex → 安装 Codex CLI 后执行 `codex login`，再点「立即刷新」
+3. 左键托盘图标可重新显示悬浮窗；右键可「显示胶囊 / 立即刷新」
+4. 点开胶囊展开，查看完整原因文案
 
 ### 维护者：如何发布绿色版
 

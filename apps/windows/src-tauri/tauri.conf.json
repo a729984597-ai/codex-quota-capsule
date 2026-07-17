@@ -39,7 +39,8 @@
       "resources/scripts/refresh-once.mjs",
       "resources/packages/core/dist/**/*",
       "resources/packages/source-codex/dist/**/*",
-      "resources/packages/source-cursor/dist/**/*"
+      "resources/packages/source-cursor/dist/**/*",
+      "resources/runtime/node/**/*"
     ],
     "icon": [
       "icons/32x32.png",

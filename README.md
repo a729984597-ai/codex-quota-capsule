@@ -20,7 +20,7 @@
 
 ## 快速开始
 
-- **只想用**：到 GitHub [Releases](https://github.com/a729984597-ai/codex-quota-capsule/releases) 下载绿色版 zip，解压后双击 `Quota Capsule Beta.exe`（需本机 Node 22+）。
+- **只想用**：到 GitHub [Releases](https://github.com/a729984597-ai/codex-quota-capsule/releases) 下载绿色版 zip，解压后双击 `Quota Capsule Beta.exe`（绿色版已内置 Node，无需另装）。
 - **开发/打包**：见 [INSTALL.md](./INSTALL.md)。
 
 > `git clone` 不会附带 exe；绿色版通过 Release 分发。
