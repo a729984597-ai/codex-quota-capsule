@@ -84,15 +84,17 @@ body:not(.is-expanded) .capsule {
   gap: 4px;
   width: 100%;
   align-self: stretch;
+  box-sizing: border-box;
 }
 
 .usage-line {
   display: grid;
-  /* Fixed label column so Cursor / Codex bars share the same track length. */
-  grid-template-columns: 7.25rem minmax(0, 1fr) 2.75em;
+  /* Label fixed; bar takes the rest so all tracks match and read longer. */
+  grid-template-columns: 6.75rem minmax(0, 1fr) 2.5em;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
   width: 100%;
+  box-sizing: border-box;
   font-size: 11px;
   color: rgba(232, 234, 237, 0.78);
 }
@@ -109,7 +111,7 @@ body:not(.is-expanded) .capsule {
   background: rgba(255, 255, 255, 0.14);
   overflow: hidden;
   width: 100%;
-  min-width: 0;
+  min-width: 72px;
 }
 
 .usage-bar .usage-fill {
@@ -207,6 +209,8 @@ body:not(.is-expanded) .capsule {
   flex-direction: column;
   align-items: stretch;
   gap: 4px;
+  width: 100%;
+  box-sizing: border-box;
 }
 
 .dual-row .used {

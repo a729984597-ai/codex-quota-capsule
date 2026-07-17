@@ -357,13 +357,14 @@ export function capsuleHeights(
   }
   if (model.displayMode === "both") {
     // Fallback heights; fitWindow measures real content when expanded.
-    return { width: 380, height: expanded ? (hasCursorSplit ? 210 : 185) : 52 };
+    // Slightly wider when expanded so usage bars read ~60% of the row.
+    return { width: expanded ? 420 : 380, height: expanded ? (hasCursorSplit ? 210 : 185) : 52 };
   }
   if (hasCursorSplit) {
-    return { width: 340, height: expanded ? 150 : 36 };
+    return { width: expanded ? 380 : 340, height: expanded ? 150 : 36 };
   }
   // Single provider with one usage bar (e.g. codex).
-  return { width: 300, height: expanded ? 135 : 36 };
+  return { width: expanded ? 340 : 300, height: expanded ? 135 : 36 };
 }
 
 function escapeHtml(value: string): string {
