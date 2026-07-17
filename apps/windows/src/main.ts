@@ -48,6 +48,11 @@ function applyLayoutMode(mode: string): void {
   void fitWindow();
 }
 
+function applyTheme(mode: string): void {
+  const theme = mode === "light" ? "light" : "dark";
+  document.documentElement.dataset.theme = theme;
+}
+
 type FitMode = "expand" | "collapse" | "resize";
 
 async function persistCollapsedPosition(x: number, y: number): Promise<void> {
@@ -110,7 +115,8 @@ async function fitWindow(mode: FitMode = "resize"): Promise<void> {
     root.style.width = prevWidth;
     root.style.height = prevHeight;
     document.body.style.height = prevBodyHeight;
-    const safety = expanded ? 4 : 6;
+    // Keep the HWND flush to the visible capsule — extra padding steals tray clicks.
+    const safety = 0;
     measuredW = Math.ceil(rect.width) + (expanded ? 0 : safety);
     measuredH = Math.ceil(rect.height) + safety;
   }
@@ -120,7 +126,7 @@ async function fitWindow(mode: FitMode = "resize"): Promise<void> {
   const nextWPhys = Math.round(nextW * scale);
   const nextHPhys = Math.round(nextH * scale);
 
-  // Collapsed refresh/startup: only resize — never nudge X/Y, or reopen drifts.
+  // Collapsed refresh/startup: only resize — never nudge X/Y.
   if (mode === "resize" && !expanded) {
     await win.setSize(new LogicalSize(nextW, nextH));
     return;
@@ -137,9 +143,7 @@ async function fitWindow(mode: FitMode = "resize"): Promise<void> {
   } else if (monitor) {
     const wa = monitor.workArea;
     const waTop = wa.position.y;
-    const waLeft = wa.position.x;
     const waBottom = wa.position.y + wa.size.height;
-    const waRight = wa.position.x + wa.size.width;
     const waMidY = waTop + wa.size.height / 2;
 
     if (mode === "expand" && collapsedFrame) {
@@ -158,14 +162,20 @@ async function fitWindow(mode: FitMode = "resize"): Promise<void> {
       nextY = growUp ? prevBottom - nextHPhys : prevPos.y;
     }
 
-    if (nextY < waTop) nextY = waTop;
-    if (nextY + nextHPhys > waBottom) {
-      nextY = Math.max(waTop, waBottom - nextHPhys);
+    // Only keep the window on the full monitor (taskbar allowed); never force
+    // it back into the work area.
+    const monLeft = monitor.position.x;
+    const monTop = monitor.position.y;
+    const monRight = monitor.position.x + monitor.size.width;
+    const monBottom = monitor.position.y + monitor.size.height;
+    if (nextY < monTop) nextY = monTop;
+    if (nextY + nextHPhys > monBottom) {
+      nextY = Math.max(monTop, monBottom - nextHPhys);
     }
-    if (nextX + nextWPhys > waRight) {
-      nextX = Math.max(waLeft, waRight - nextWPhys);
+    if (nextX + nextWPhys > monRight) {
+      nextX = Math.max(monLeft, monRight - nextWPhys);
     }
-    if (nextX < waLeft) nextX = waLeft;
+    if (nextX < monLeft) nextX = monLeft;
   }
 
   await withSuppressedPositionSave(async () => {
@@ -198,9 +208,8 @@ async function setExpanded(next: boolean): Promise<void> {
     expanded = false;
     paint();
     await fitWindow("collapse");
-    if (collapsedFrame) {
-      await persistCollapsedPosition(collapsedFrame.x, collapsedFrame.y);
-    }
+    const pos = await win.outerPosition();
+    await persistCollapsedPosition(pos.x, pos.y);
     collapsedFrame = null;
     return;
   }
@@ -315,12 +324,20 @@ window.addEventListener("DOMContentLoaded", () => {
     applyLayoutMode(event.payload);
   });
 
+  void listen<string>("quota://theme-changed", (event) => {
+    applyTheme(event.payload);
+  });
+
   void invoke<string>("get_font_size")
     .then(applyFontSize)
     .catch(() => undefined);
 
   void invoke<string>("get_layout_mode")
     .then(applyLayoutMode)
+    .catch(() => undefined);
+
+  void invoke<string>("get_theme_mode")
+    .then(applyTheme)
     .catch(() => undefined);
 
   void invoke<CapsuleViewModel>("get_view_model")

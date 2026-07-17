@@ -12,12 +12,13 @@ use tauri::{AppHandle, Emitter, Manager, State};
 
 use crate::model::{
     CapsuleViewModel, FontPreference, LastSuccessFile, LayoutPreference, ProviderPreference,
-    ProviderSlice, RefreshPayload, WindowPosition,
+    ProviderSlice, RefreshPayload, ThemePreference, WindowPosition,
 };
 use crate::persist::{
     last_success_path, read_font_preference, read_last_success, read_layout_preference,
-    read_provider_preference, write_font_preference, write_last_success, write_layout_preference,
-    write_provider_preference, write_window_position,
+    read_provider_preference, read_theme_preference, write_font_preference, write_last_success,
+    write_layout_preference, write_provider_preference, write_theme_preference,
+    write_window_position,
 };
 
 #[cfg(windows)]
@@ -48,6 +49,8 @@ pub struct AppState {
     pub font_menu_items: Mutex<Option<FontMenuItems>>,
     pub layout_mode: Mutex<String>,
     pub layout_menu_items: Mutex<Option<LayoutMenuItems>>,
+    pub theme_mode: Mutex<String>,
+    pub theme_menu_items: Mutex<Option<ThemeMenuItems>>,
     pub refresh_in_flight: AtomicBool,
     pub refresh_pending: AtomicBool,
     pub last_success_at: Mutex<Option<Instant>>,
@@ -105,11 +108,25 @@ impl LayoutMenuItems {
     }
 }
 
+#[derive(Clone)]
+pub struct ThemeMenuItems {
+    pub dark: tauri::menu::CheckMenuItem<tauri::Wry>,
+    pub light: tauri::menu::CheckMenuItem<tauri::Wry>,
+}
+
+impl ThemeMenuItems {
+    pub fn set_checked(&self, mode: &str) {
+        let _ = self.dark.set_checked(mode == "dark");
+        let _ = self.light.set_checked(mode == "light");
+    }
+}
+
 impl AppState {
     pub fn new(workspace_root: PathBuf) -> Self {
         let pref = read_provider_preference();
         let font = read_font_preference();
         let layout = read_layout_preference();
+        let theme = read_theme_preference();
         let mut provider_cache = HashMap::new();
         if let Some(saved) = read_last_success() {
             // Approximate cache age from last-success file mtime; unknown → stale.
@@ -129,6 +146,8 @@ impl AppState {
             font_menu_items: Mutex::new(None),
             layout_mode: Mutex::new(layout.mode),
             layout_menu_items: Mutex::new(None),
+            theme_mode: Mutex::new(theme.mode),
+            theme_menu_items: Mutex::new(None),
             refresh_in_flight: AtomicBool::new(false),
             refresh_pending: AtomicBool::new(false),
             last_success_at: Mutex::new(None),
@@ -265,6 +284,43 @@ pub fn current_layout_mode(app: &AppHandle) -> String {
 #[tauri::command]
 pub fn get_layout_mode(app: AppHandle) -> String {
     current_layout_mode(&app)
+}
+
+pub fn set_theme_mode(app: &AppHandle, mode: &str) -> Result<(), String> {
+    let normalized = match mode {
+        "dark" | "light" => mode,
+        _ => return Err(format!("unsupported theme mode: {mode}")),
+    };
+    write_theme_preference(&ThemePreference {
+        mode: normalized.into(),
+    })?;
+    {
+        let state = app.state::<AppState>();
+        *state.theme_mode.lock().map_err(|e| e.to_string())? = normalized.into();
+        let items_opt = state
+            .theme_menu_items
+            .lock()
+            .map_err(|e| e.to_string())?
+            .clone();
+        if let Some(items) = items_opt {
+            items.set_checked(normalized);
+        }
+    }
+    let _ = app.emit("quota://theme-changed", normalized.to_string());
+    Ok(())
+}
+
+pub fn current_theme_mode(app: &AppHandle) -> String {
+    app.state::<AppState>()
+        .theme_mode
+        .lock()
+        .map(|g| g.clone())
+        .unwrap_or_else(|_| "dark".into())
+}
+
+#[tauri::command]
+pub fn get_theme_mode(app: AppHandle) -> String {
+    current_theme_mode(&app)
 }
 
 /// Lightweight foreground poll for "auto" mode. When the focused app's

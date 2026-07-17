@@ -2,7 +2,8 @@ use std::fs;
 use std::path::PathBuf;
 
 use crate::model::{
-    FontPreference, LastSuccessFile, LayoutPreference, ProviderPreference, WindowPosition,
+    FontPreference, LastSuccessFile, LayoutPreference, ProviderPreference, ThemePreference,
+    WindowPosition,
 };
 
 fn strip_bom(raw: &str) -> &str {
@@ -112,6 +113,26 @@ pub fn read_layout_preference() -> LayoutPreference {
     let raw = match fs::read_to_string(path) {
         Ok(v) => v,
         Err(_) => return LayoutPreference::default(),
+    };
+    serde_json::from_str(strip_bom(&raw)).unwrap_or_default()
+}
+
+pub fn theme_preference_path() -> PathBuf {
+    app_data_dir().join("theme-preference.json")
+}
+
+pub fn write_theme_preference(pref: &ThemePreference) -> Result<(), String> {
+    let dir = ensure_app_data_dir().map_err(|e| e.to_string())?;
+    let path = dir.join("theme-preference.json");
+    let json = serde_json::to_string_pretty(pref).map_err(|e| e.to_string())?;
+    fs::write(path, json).map_err(|e| e.to_string())
+}
+
+pub fn read_theme_preference() -> ThemePreference {
+    let path = theme_preference_path();
+    let raw = match fs::read_to_string(path) {
+        Ok(v) => v,
+        Err(_) => return ThemePreference::default(),
     };
     serde_json::from_str(strip_bom(&raw)).unwrap_or_default()
 }

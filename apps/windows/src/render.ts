@@ -219,8 +219,8 @@ function minimalChip(
       ? toRemaining(usedPercent)
       : usedPercent;
   const pctHtml = hasSplit
-    ? `<b class="${pctClass(breakdown.autoPercent)}">${escapeHtml(fmtPct(breakdown.autoPercent))}</b><span class="mini-sep">/</span><b class="${pctClass(breakdown.apiPercent)}">${escapeHtml(fmtPct(breakdown.apiPercent))}</b>`
-    : `<b class="${pctClass(usedPercent)}">${escapeHtml(fmtPct(showPct))}</b>`;
+    ? `<span class="mini-values"><b class="${pctClass(breakdown.autoPercent)}">${escapeHtml(fmtPct(breakdown.autoPercent))}</b><span class="mini-sep">/</span><b class="${pctClass(breakdown.apiPercent)}">${escapeHtml(fmtPct(breakdown.apiPercent))}</b></span>`
+    : `<span class="mini-values"><b class="${pctClass(usedPercent)}">${escapeHtml(fmtPct(showPct))}</b></span>`;
   return `
     <div class="mini-chip" data-tone="${escapeHtml(tone)}">
       <span class="dot" aria-hidden="true"></span>

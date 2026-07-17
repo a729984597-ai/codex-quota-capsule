@@ -5,8 +5,8 @@ use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent}
 use tauri::{AppHandle, Manager};
 
 use crate::refresh::{
-    current_font_size, current_layout_mode, current_provider_mode, run_refresh, set_font_size,
-    set_layout_mode, set_provider_mode, AppState,
+    current_font_size, current_layout_mode, current_provider_mode, current_theme_mode, run_refresh,
+    set_font_size, set_layout_mode, set_provider_mode, set_theme_mode, AppState,
 };
 
 /// Right-click context menu on the capsule window (replaces the WebView2
@@ -17,6 +17,7 @@ pub fn show_context_menu(window: tauri::Window) -> Result<(), String> {
     let mode = current_provider_mode(&app);
     let font = current_font_size(&app);
     let layout = current_layout_mode(&app);
+    let theme = current_theme_mode(&app);
 
     let build = || -> tauri::Result<Menu<tauri::Wry>> {
         let refresh_i =
@@ -52,6 +53,18 @@ pub fn show_context_menu(window: tauri::Window) -> Result<(), String> {
             true,
             &[&layout_standard_i, &layout_minimal_i],
         )?;
+        let theme_dark_i = CheckMenuItem::with_id(
+            &app, "ctx_theme_dark", "深色", true, theme == "dark", None::<&str>,
+        )?;
+        let theme_light_i = CheckMenuItem::with_id(
+            &app, "ctx_theme_light", "浅色", true, theme == "light", None::<&str>,
+        )?;
+        let theme_menu = Submenu::with_items(
+            &app,
+            "主题",
+            true,
+            &[&theme_dark_i, &theme_light_i],
+        )?;
         let font_small_i = CheckMenuItem::with_id(
             &app, "ctx_font_small", "小", true, font == "small", None::<&str>,
         )?;
@@ -80,6 +93,7 @@ pub fn show_context_menu(window: tauri::Window) -> Result<(), String> {
                 &sep,
                 &provider_menu,
                 &layout_menu,
+                &theme_menu,
                 &font_menu,
                 &sep,
                 &quit_i,
@@ -126,6 +140,10 @@ pub fn handle_context_menu_event(app: &AppHandle, id: &str) {
         "ctx_layout_standard" | "ctx_layout_minimal" => {
             let mode = id.trim_start_matches("ctx_layout_").to_string();
             let _ = set_layout_mode(app, &mode);
+        }
+        "ctx_theme_dark" | "ctx_theme_light" => {
+            let mode = id.trim_start_matches("ctx_theme_").to_string();
+            let _ = set_theme_mode(app, &mode);
         }
         "ctx_font_small" | "ctx_font_standard" | "ctx_font_large" | "ctx_font_xlarge" => {
             let size = id.trim_start_matches("ctx_font_").to_string();
@@ -193,6 +211,23 @@ pub fn setup_tray(app: &AppHandle) -> tauri::Result<()> {
         }
     }
 
+    let theme = current_theme_mode(app);
+    let theme_dark_i =
+        CheckMenuItem::with_id(app, "theme_dark", "深色", true, theme == "dark", None::<&str>)?;
+    let theme_light_i = CheckMenuItem::with_id(
+        app, "theme_light", "浅色", true, theme == "light", None::<&str>,
+    )?;
+    let theme_menu = Submenu::with_items(app, "主题", true, &[&theme_dark_i, &theme_light_i])?;
+
+    if let Some(state) = app.try_state::<AppState>() {
+        if let Ok(mut guard) = state.theme_menu_items.lock() {
+            *guard = Some(crate::refresh::ThemeMenuItems {
+                dark: theme_dark_i.clone(),
+                light: theme_light_i.clone(),
+            });
+        }
+    }
+
     let font = current_font_size(app);
     let font_small_i =
         CheckMenuItem::with_id(app, "font_small", "小", true, font == "small", None::<&str>)?;
@@ -232,6 +267,7 @@ pub fn setup_tray(app: &AppHandle) -> tauri::Result<()> {
             &sep,
             &provider_menu,
             &layout_menu,
+            &theme_menu,
             &font_menu,
             &sep,
             &quit_i,
@@ -293,6 +329,10 @@ pub fn setup_tray(app: &AppHandle) -> tauri::Result<()> {
             "layout_standard" | "layout_minimal" => {
                 let mode = event.id.as_ref().trim_start_matches("layout_").to_string();
                 let _ = set_layout_mode(app, &mode);
+            }
+            "theme_dark" | "theme_light" => {
+                let mode = event.id.as_ref().trim_start_matches("theme_").to_string();
+                let _ = set_theme_mode(app, &mode);
             }
             "font_small" | "font_standard" | "font_large" | "font_xlarge" => {
                 let size = event.id.as_ref().trim_start_matches("font_").to_string();

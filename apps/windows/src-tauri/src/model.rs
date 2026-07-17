@@ -224,3 +224,18 @@ impl Default for LayoutPreference {
         }
     }
 }
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct ThemePreference {
+    /// dark | light
+    pub mode: String,
+}
+
+impl Default for ThemePreference {
+    fn default() -> Self {
+        Self {
+            mode: "dark".into(),
+        }
+    }
+}
