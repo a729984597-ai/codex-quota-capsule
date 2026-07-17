@@ -69,8 +69,10 @@ function fmtPct(value: number | null | undefined): string {
 
 /** Codex UI matches official app: show remaining %, not used %. */
 function toRemaining(used: number | null | undefined): number | null {
-  if (used === null || used === undefined || !Number.isFinite(used)) return null;
-  return Math.min(100, Math.max(0, 100 - used));
+  if (used === null || used === undefined) return null;
+  const n = Number(used);
+  if (!Number.isFinite(n)) return null;
+  return Math.min(100, Math.max(0, 100 - n));
 }
 
 function isCodexProvider(provider: string): boolean {
@@ -79,13 +81,26 @@ function isCodexProvider(provider: string): boolean {
 
 /** Tone class for a single pool, by its own remaining quota. */
 function pctClass(used: number | null | undefined): string {
-  if (used === null || used === undefined || !Number.isFinite(used)) {
-    return "pct";
-  }
-  const remaining = 100 - used;
-  if (remaining < 10) return "pct pct-danger";
-  if (remaining < 30) return "pct pct-watch";
-  return "pct pct-safe";
+  const tone = remainingTone(used);
+  return tone ? `pct pct-${tone}` : "pct";
+}
+
+/** safe | watch | danger from remaining quota thresholds. */
+function remainingTone(
+  used: number | null | undefined,
+): "safe" | "watch" | "danger" | null {
+  if (used === null || used === undefined) return null;
+  const n = Number(used);
+  if (!Number.isFinite(n)) return null;
+  const remaining = 100 - n;
+  if (remaining < 10) return "danger";
+  if (remaining < 30) return "watch";
+  return "safe";
+}
+
+function fillClass(used: number | null | undefined): string {
+  const tone = remainingTone(used);
+  return tone ? `usage-fill fill-${tone}` : "usage-fill";
 }
 
 function usedHtml(
@@ -226,12 +241,12 @@ function breakdownBars(breakdown?: UsageBreakdown | null): string {
     <div class="usage-split">
       <div class="usage-line">
         <span class="usage-name">Auto+Composer</span>
-        <span class="usage-bar"><i style="width:${barWidth(breakdown.autoPercent)}%"></i></span>
+        <span class="usage-bar"><span class="${fillClass(breakdown.autoPercent)}" style="width:${barWidth(breakdown.autoPercent)}%"></span></span>
         <span class="usage-pct ${pctClass(breakdown.autoPercent)}">${escapeHtml(fmtPct(breakdown.autoPercent))}</span>
       </div>
       <div class="usage-line">
         <span class="usage-name">API</span>
-        <span class="usage-bar"><i style="width:${barWidth(breakdown.apiPercent)}%"></i></span>
+        <span class="usage-bar"><span class="${fillClass(breakdown.apiPercent)}" style="width:${barWidth(breakdown.apiPercent)}%"></span></span>
         <span class="usage-pct ${pctClass(breakdown.apiPercent)}">${escapeHtml(fmtPct(breakdown.apiPercent))}</span>
       </div>
     </div>
@@ -239,24 +254,29 @@ function breakdownBars(breakdown?: UsageBreakdown | null): string {
 }
 
 function singleBar(usedPercent: number | null, asRemaining = false): string {
-  if (usedPercent === null || !Number.isFinite(usedPercent)) return "";
-  const value = asRemaining ? toRemaining(usedPercent) : usedPercent;
-  if (value === null) return "";
+  if (usedPercent === null || usedPercent === undefined) return "";
+  const used = Number(usedPercent);
+  if (!Number.isFinite(used)) return "";
+  const value = asRemaining ? toRemaining(used) : used;
+  if (value === null || !Number.isFinite(value)) return "";
   const label = asRemaining ? "剩余" : "已用";
+  const width = barWidth(value);
   return `
     <div class="usage-split">
       <div class="usage-line">
         <span class="usage-name">${label}</span>
-        <span class="usage-bar"><i style="width:${barWidth(value)}%"></i></span>
-        <span class="usage-pct ${pctClass(usedPercent)}">${escapeHtml(fmtPct(value))}</span>
+        <span class="usage-bar" aria-hidden="true"><span class="${fillClass(used)}" style="width:${width}%"></span></span>
+        <span class="usage-pct ${pctClass(used)}">${escapeHtml(fmtPct(value))}</span>
       </div>
     </div>
   `;
 }
 
 function barWidth(value: number | null | undefined): number {
-  if (value === null || value === undefined || !Number.isFinite(value)) return 0;
-  return Math.min(100, Math.max(0, value));
+  if (value === null || value === undefined || !Number.isFinite(Number(value))) {
+    return 0;
+  }
+  return Math.min(100, Math.max(0, Number(value)));
 }
 
 function renderDual(

@@ -82,33 +82,55 @@ body:not(.is-expanded) .capsule {
   display: flex;
   flex-direction: column;
   gap: 4px;
+  width: 100%;
+  align-self: stretch;
 }
 
 .usage-line {
   display: grid;
-  grid-template-columns: 92px 1fr 36px;
+  /* Fixed label column so Cursor / Codex bars share the same track length. */
+  grid-template-columns: 7.25rem minmax(0, 1fr) 2.75em;
   align-items: center;
-  gap: 8px;
+  gap: 10px;
+  width: 100%;
   font-size: 11px;
   color: rgba(232, 234, 237, 0.78);
 }
 
 .usage-name {
   white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .usage-bar {
-  height: 4px;
+  height: 6px;
   border-radius: 999px;
-  background: rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.14);
   overflow: hidden;
+  width: 100%;
+  min-width: 0;
 }
 
-.usage-bar i {
+.usage-bar .usage-fill {
   display: block;
   height: 100%;
-  background: #5b9cff;
   border-radius: inherit;
+  min-width: 0;
+  background: #9aa0a6;
+  transition: width 0.2s ease, background-color 0.2s ease;
+}
+
+.usage-bar .usage-fill.fill-safe {
+  background: #34a853;
+}
+
+.usage-bar .usage-fill.fill-watch {
+  background: #f9ab00;
+}
+
+.usage-bar .usage-fill.fill-danger {
+  background: #ea4335;
 }
 
 .usage-pct {
