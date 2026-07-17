@@ -1,0 +1,56 @@
+name: Release Windows portable
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build portable app
+        run: npm run win:build
+
+      - name: Pack portable zip
+        shell: pwsh
+        run: |
+          $out = "Quota-Capsule-Beta-windows-portable"
+          New-Item -ItemType Directory -Force -Path $out | Out-Null
+          Copy-Item "Quota Capsule Beta.exe" $out
+          Copy-Item -Recurse "resources" $out
+          Compress-Archive -Path $out -DestinationPath "$out.zip" -Force
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Quota-Capsule-Beta-windows-portable
+          path: Quota-Capsule-Beta-windows-portable.zip
+
+      - name: Create GitHub Release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: Quota-Capsule-Beta-windows-portable.zip
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

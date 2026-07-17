@@ -1,6 +1,28 @@
 # 安装与运行（Windows）
 
-## 最终用户（推荐）
+## 最终用户（推荐：下载绿色版）
+
+不需要从源码编译。到 GitHub **Releases** 下载 `Quota-Capsule-Beta-windows-portable.zip`：
+
+1. 打开仓库 → **Releases**
+2. 下载最新的 `Quota-Capsule-Beta-windows-portable.zip`
+3. 解压后双击 `Quota Capsule Beta.exe`（需保留同目录 `resources/`）
+4. 安装 [Node.js 22+](https://nodejs.org/)（刷新额度桥接需要）
+5. （可选）本机已登录 Codex（`codex login`）和/或 Cursor
+
+> 未签名安装包可能被 SmartScreen 拦截，选择「仍要运行」即可。  
+> `git clone` **不会**带上 exe（体积大，已忽略）；要「下载即用」请走 Releases。
+
+### 维护者：如何发布绿色版
+
+```powershell
+git tag v0.1.0-beta.2
+git push origin v0.1.0-beta.2
+```
+
+推送 `v*` 标签后，GitHub Actions 会自动打包并上传到该 Release。也可在 Actions 里手动跑 **Release Windows portable**。
+
+## 最终用户（本地已有构建产物时）
 
 1. 安装 [Node.js 22+](https://nodejs.org/)（刷新桥接需要；Cursor 用量读取依赖 Node 内置 sqlite）
 2. （可选）Codex CLI（`npm i -g @openai/codex`）并 `codex login`
@@ -12,8 +34,6 @@
    - **自动**：Cursor 进程在跑则盯 Cursor，否则盯 Codex
    - **仅 Cursor / 仅 Codex**
    - **都显示**：一颗胶囊同时展示两家
-
-> 未签名安装包可能被 SmartScreen 拦截，选择「仍要运行」即可。
 
 ## 前置条件（开发/打包）
 
