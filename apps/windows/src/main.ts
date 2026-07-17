@@ -1,5 +1,5 @@
-import { getCurrentWindow } from "@tauri-apps/api/window";
-import { LogicalSize } from "@tauri-apps/api/dpi";
+import { currentMonitor, getCurrentWindow } from "@tauri-apps/api/window";
+import { LogicalSize, PhysicalPosition } from "@tauri-apps/api/dpi";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import {
@@ -25,6 +25,14 @@ const FONT_SCALES: Record<string, number> = {
 
 const DRAG_THRESHOLD_PX = 4;
 
+/** Collapsed outer frame (physical px), saved on expand so collapse can restore exactly. */
+let collapsedFrame: {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+} | null = null;
+
 function applyFontSize(size: string): void {
   fontScale = FONT_SCALES[size] ?? 1;
   // zoom scales the whole layout; the window is resized to match.
@@ -40,11 +48,42 @@ function applyLayoutMode(mode: string): void {
   void fitWindow();
 }
 
-async function fitWindow(): Promise<void> {
+type FitMode = "expand" | "collapse" | "resize";
+
+async function persistCollapsedPosition(x: number, y: number): Promise<void> {
+  try {
+    await invoke("save_window_position", { x, y });
+  } catch {
+    // ignore persistence failures
+  }
+}
+
+async function withSuppressedPositionSave<T>(fn: () => Promise<T>): Promise<T> {
+  try {
+    await invoke("suppress_window_position_save", { suppress: true });
+  } catch {
+    // older builds without the command — still attempt the move
+  }
+  try {
+    return await fn();
+  } finally {
+    try {
+      await invoke("suppress_window_position_save", { suppress: false });
+    } catch {
+      // ignore
+    }
+  }
+}
+
+async function fitWindow(mode: FitMode = "resize"): Promise<void> {
   const { width, height } = capsuleHeights(model, expanded, layoutMode);
   const win = getCurrentWindow();
   const scaledW = Math.round(width * fontScale);
   const fallbackH = Math.round(height * fontScale);
+
+  const prevPos = await win.outerPosition();
+  const prevSize = await win.outerSize();
+  const scale = await win.scaleFactor();
 
   // Measure intrinsic content size so expanded/collapsed windows hug content
   // instead of leaving large top/bottom gaps from fixed heights + centering.
@@ -76,15 +115,95 @@ async function fitWindow(): Promise<void> {
     measuredH = Math.ceil(rect.height) + safety;
   }
 
-  await win.setSize(
-    new LogicalSize(
-      expanded ? scaledW : Math.max(scaledW, measuredW),
-      Math.max(1, measuredH),
-    ),
-  );
+  const nextW = expanded ? scaledW : Math.max(scaledW, measuredW);
+  const nextH = Math.max(1, measuredH);
+  const nextWPhys = Math.round(nextW * scale);
+  const nextHPhys = Math.round(nextH * scale);
+
+  // Collapsed refresh/startup: only resize — never nudge X/Y, or reopen drifts.
+  if (mode === "resize" && !expanded) {
+    await win.setSize(new LogicalSize(nextW, nextH));
+    return;
+  }
+
+  let nextX = prevPos.x;
+  let nextY = prevPos.y;
+  const monitor = await currentMonitor();
+
+  if (mode === "collapse" && collapsedFrame) {
+    // Exact restore — avoid recomputing from the expanded frame (DPI/clamp drift).
+    nextX = collapsedFrame.x;
+    nextY = collapsedFrame.y;
+  } else if (monitor) {
+    const wa = monitor.workArea;
+    const waTop = wa.position.y;
+    const waLeft = wa.position.x;
+    const waBottom = wa.position.y + wa.size.height;
+    const waRight = wa.position.x + wa.size.width;
+    const waMidY = waTop + wa.size.height / 2;
+
+    if (mode === "expand" && collapsedFrame) {
+      const anchorBottom = collapsedFrame.y + collapsedFrame.height;
+      const anchorCenterY = collapsedFrame.y + collapsedFrame.height / 2;
+      const growUp =
+        anchorCenterY >= waMidY || collapsedFrame.y + nextHPhys > waBottom;
+      nextX = collapsedFrame.x;
+      nextY = growUp ? anchorBottom - nextHPhys : collapsedFrame.y;
+    } else {
+      // Refresh / font / layout while staying expanded: keep bottom when low.
+      const prevBottom = prevPos.y + prevSize.height;
+      const prevCenterY = prevPos.y + prevSize.height / 2;
+      const growUp =
+        prevCenterY >= waMidY || prevPos.y + nextHPhys > waBottom;
+      nextY = growUp ? prevBottom - nextHPhys : prevPos.y;
+    }
+
+    if (nextY < waTop) nextY = waTop;
+    if (nextY + nextHPhys > waBottom) {
+      nextY = Math.max(waTop, waBottom - nextHPhys);
+    }
+    if (nextX + nextWPhys > waRight) {
+      nextX = Math.max(waLeft, waRight - nextWPhys);
+    }
+    if (nextX < waLeft) nextX = waLeft;
+  }
+
+  await withSuppressedPositionSave(async () => {
+    await win.setSize(new LogicalSize(nextW, nextH));
+    if (nextX !== prevPos.x || nextY !== prevPos.y || mode !== "resize") {
+      await win.setPosition(new PhysicalPosition(nextX, nextY));
+    }
+  });
 }
 
 async function setExpanded(next: boolean): Promise<void> {
+  const win = getCurrentWindow();
+  if (next && !expanded) {
+    const pos = await win.outerPosition();
+    const size = await win.outerSize();
+    collapsedFrame = {
+      x: pos.x,
+      y: pos.y,
+      width: size.width,
+      height: size.height,
+    };
+    // Persist collapsed spot before expand so quit-while-expanded still restores it.
+    await persistCollapsedPosition(pos.x, pos.y);
+    expanded = true;
+    paint();
+    await fitWindow("expand");
+    return;
+  }
+  if (!next && expanded) {
+    expanded = false;
+    paint();
+    await fitWindow("collapse");
+    if (collapsedFrame) {
+      await persistCollapsedPosition(collapsedFrame.x, collapsedFrame.y);
+    }
+    collapsedFrame = null;
+    return;
+  }
   expanded = next;
   paint();
   await fitWindow();
@@ -151,6 +270,13 @@ function bindDragAndToggle(root: HTMLElement): void {
     dragging = false;
     if (!wasDragging && event.type === "pointerup") {
       void setExpanded(!expanded);
+      return;
+    }
+    if (wasDragging && event.type === "pointerup" && !expanded) {
+      void (async () => {
+        const pos = await getCurrentWindow().outerPosition();
+        await persistCollapsedPosition(pos.x, pos.y);
+      })();
     }
   };
 

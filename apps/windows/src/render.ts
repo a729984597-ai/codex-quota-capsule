@@ -67,6 +67,16 @@ function fmtPct(value: number | null | undefined): string {
   return value === null || value === undefined ? "—" : `${Math.round(value)}%`;
 }
 
+/** Codex UI matches official app: show remaining %, not used %. */
+function toRemaining(used: number | null | undefined): number | null {
+  if (used === null || used === undefined || !Number.isFinite(used)) return null;
+  return Math.min(100, Math.max(0, 100 - used));
+}
+
+function isCodexProvider(provider: string): boolean {
+  return provider === "codex";
+}
+
 /** Tone class for a single pool, by its own remaining quota. */
 function pctClass(used: number | null | undefined): string {
   if (used === null || used === undefined || !Number.isFinite(used)) {
@@ -79,6 +89,7 @@ function pctClass(used: number | null | undefined): string {
 }
 
 function usedHtml(
+  provider: string,
   usedPercent: number | null,
   breakdown?: UsageBreakdown | null,
 ): string {
@@ -87,6 +98,12 @@ function usedHtml(
     (breakdown.autoPercent !== null || breakdown.apiPercent !== null)
   ) {
     return `Auto <b class="${pctClass(breakdown.autoPercent)}">${escapeHtml(fmtPct(breakdown.autoPercent))}</b> · API <b class="${pctClass(breakdown.apiPercent)}">${escapeHtml(fmtPct(breakdown.apiPercent))}</b>`;
+  }
+  if (isCodexProvider(provider)) {
+    const remaining = toRemaining(usedPercent);
+    return remaining === null
+      ? "—"
+      : `剩余 <b class="${pctClass(usedPercent)}">${Math.round(remaining)}%</b>`;
   }
   return usedPercent === null
     ? "—"
@@ -134,7 +151,7 @@ export function renderCapsule(
     return;
   }
 
-  const used = usedHtml(model.usedPercent, model.usageBreakdown);
+  const used = usedHtml(model.provider, model.usedPercent, model.usageBreakdown);
   const tag = providerLabel(model.provider);
 
   if (!expanded) {
@@ -150,7 +167,8 @@ export function renderCapsule(
 
   const refreshLabel = refreshing ? "刷新中" : "刷新";
   const bars =
-    breakdownBars(model.usageBreakdown) || singleBar(model.usedPercent);
+    breakdownBars(model.usageBreakdown) ||
+    singleBar(model.usedPercent, isCodexProvider(model.provider));
   root.innerHTML = `
     <div class="expanded-row">
       <span class="dot" aria-hidden="true"></span>
@@ -180,9 +198,14 @@ function minimalChip(
   const hasSplit =
     breakdown &&
     (breakdown.autoPercent !== null || breakdown.apiPercent !== null);
+  const showPct = hasSplit
+    ? null
+    : isCodexProvider(provider)
+      ? toRemaining(usedPercent)
+      : usedPercent;
   const pctHtml = hasSplit
     ? `<b class="${pctClass(breakdown.autoPercent)}">${escapeHtml(fmtPct(breakdown.autoPercent))}</b><span class="mini-sep">/</span><b class="${pctClass(breakdown.apiPercent)}">${escapeHtml(fmtPct(breakdown.apiPercent))}</b>`
-    : `<b class="${pctClass(usedPercent)}">${escapeHtml(fmtPct(usedPercent))}</b>`;
+    : `<b class="${pctClass(usedPercent)}">${escapeHtml(fmtPct(showPct))}</b>`;
   return `
     <div class="mini-chip" data-tone="${escapeHtml(tone)}">
       <span class="dot" aria-hidden="true"></span>
@@ -215,14 +238,17 @@ function breakdownBars(breakdown?: UsageBreakdown | null): string {
   `;
 }
 
-function singleBar(usedPercent: number | null): string {
+function singleBar(usedPercent: number | null, asRemaining = false): string {
   if (usedPercent === null || !Number.isFinite(usedPercent)) return "";
+  const value = asRemaining ? toRemaining(usedPercent) : usedPercent;
+  if (value === null) return "";
+  const label = asRemaining ? "剩余" : "已用";
   return `
     <div class="usage-split">
       <div class="usage-line">
-        <span class="usage-name">已用</span>
-        <span class="usage-bar"><i style="width:${barWidth(usedPercent)}%"></i></span>
-        <span class="usage-pct ${pctClass(usedPercent)}">${escapeHtml(fmtPct(usedPercent))}</span>
+        <span class="usage-name">${label}</span>
+        <span class="usage-bar"><i style="width:${barWidth(value)}%"></i></span>
+        <span class="usage-pct ${pctClass(usedPercent)}">${escapeHtml(fmtPct(value))}</span>
       </div>
     </div>
   `;
@@ -241,7 +267,7 @@ function renderDual(
 ): void {
   const rows = (model.providers ?? [])
     .map((p) => {
-      const used = usedHtml(p.usedPercent, p.usageBreakdown);
+      const used = usedHtml(p.provider, p.usedPercent, p.usageBreakdown);
       const tag = providerLabel(p.provider);
       if (!expanded) {
         return `
@@ -261,7 +287,7 @@ function renderDual(
             <span class="tag">${escapeHtml(tag)}</span>
             <span class="status">${escapeHtml(p.statusLabel)}</span>
           </div>
-          ${breakdownBars(p.usageBreakdown) || singleBar(p.usedPercent) || `<span class="used">${used}</span>`}
+          ${breakdownBars(p.usageBreakdown) || singleBar(p.usedPercent, isCodexProvider(p.provider)) || `<span class="used">${used}</span>`}
           <p class="judgment">${escapeHtml(p.judgmentText)}</p>
           <div class="meta">
             <span>${escapeHtml(p.freshnessText)}</span>

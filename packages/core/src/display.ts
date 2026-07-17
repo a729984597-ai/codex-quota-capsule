@@ -143,9 +143,15 @@ export function mergeDualViewModel(
 }
 
 function formatSliceLine(slice: ProviderSlice): string {
-  const used =
-    slice.usedPercent === null ? "—" : `${Math.round(slice.usedPercent)}%`;
-  return `${slice.statusLabel} ${used}`;
+  if (slice.usedPercent === null) {
+    return `${slice.statusLabel} —`;
+  }
+  // Codex official UI shows remaining usage; Cursor keeps used %.
+  const pct =
+    slice.provider === "codex"
+      ? Math.round(100 - slice.usedPercent)
+      : Math.round(slice.usedPercent);
+  return `${slice.statusLabel} ${pct}%`;
 }
 
 function pickWorse(a: ProviderSlice, b: ProviderSlice): ProviderSlice {

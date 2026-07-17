@@ -13,7 +13,8 @@ use crate::model::WindowPosition;
 use crate::persist::{read_window_position, write_window_position};
 use crate::refresh::{
     apply_bridge_root, detect_workspace_root, get_font_size, get_layout_mode, get_view_model,
-    poll_auto_switch, refresh_now, run_refresh, AppState,
+    poll_auto_switch, refresh_now, run_refresh, save_window_position,
+    suppress_window_position_save, AppState,
 };
 use crate::tray::{handle_context_menu_event, setup_tray, show_context_menu};
 
@@ -45,6 +46,12 @@ fn force_topmost(win: &tauri::WebviewWindow) {
     let _ = win.set_always_on_top(true);
 }
 
+fn context_menu_is_open(app: &tauri::AppHandle) -> bool {
+    app.state::<AppState>()
+        .context_menu_open
+        .load(std::sync::atomic::Ordering::SeqCst)
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     // Prevent WebView2 from filling rounded transparent pixels with white.
@@ -69,7 +76,9 @@ pub fn run() {
             get_view_model,
             show_context_menu,
             get_font_size,
-            get_layout_mode
+            get_layout_mode,
+            suppress_window_position_save,
+            save_window_position
         ])
         .setup(|app| {
             // Packaged .exe: prefer bundled resources next to the binary.
@@ -88,19 +97,40 @@ pub fn run() {
 
                 if let Some(pos) = read_window_position() {
                     let _ = win.set_position(PhysicalPosition::new(pos.x as i32, pos.y as i32));
+                    // WebView init can reset placement; re-apply shortly after show.
+                    let win_restore = win.clone();
+                    let restore_pos = pos.clone();
+                    std::thread::spawn(move || {
+                        std::thread::sleep(Duration::from_millis(400));
+                        let _ = win_restore.set_position(PhysicalPosition::new(
+                            restore_pos.x as i32,
+                            restore_pos.y as i32,
+                        ));
+                    });
                 }
 
                 let app_handle = app.handle().clone();
                 win.on_window_event(move |event| {
                     if let tauri::WindowEvent::Moved(position) = event {
-                        let _ = write_window_position(&WindowPosition {
-                            x: position.x as f64,
-                            y: position.y as f64,
-                        });
+                        let suppress = app_handle
+                            .state::<AppState>()
+                            .suppress_position_save
+                            .load(std::sync::atomic::Ordering::SeqCst);
+                        if !suppress {
+                            let _ = write_window_position(&WindowPosition {
+                                x: position.x as f64,
+                                y: position.y as f64,
+                            });
+                        }
                     }
                     // Shell flyouts (tray overflow etc.) can knock the capsule
                     // out of the topmost band; re-assert when we lose focus.
+                    // Skip while the native context menu is open — otherwise
+                    // Focused(false) from the popup covers the menu itself.
                     if let tauri::WindowEvent::Focused(false) = event {
+                        if context_menu_is_open(&app_handle) {
+                            return;
+                        }
                         if let Some(w) = app_handle.get_webview_window("main") {
                             force_topmost(&w);
                         }
@@ -141,6 +171,9 @@ pub fn run() {
             std::thread::spawn(move || loop {
                 std::thread::sleep(Duration::from_secs(3));
                 poll_auto_switch(&handle);
+                if context_menu_is_open(&handle) {
+                    continue;
+                }
                 if let Some(win) = handle.get_webview_window("main") {
                     if win.is_visible().unwrap_or(false) {
                         force_topmost(&win);

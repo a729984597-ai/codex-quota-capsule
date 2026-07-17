@@ -1,3 +1,5 @@
+use std::sync::atomic::Ordering;
+
 use tauri::menu::{CheckMenuItem, ContextMenu, Menu, MenuItem, PredefinedMenuItem, Submenu};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
 use tauri::{AppHandle, Manager};
@@ -6,6 +8,33 @@ use crate::refresh::{
     current_font_size, current_layout_mode, current_provider_mode, run_refresh, set_font_size,
     set_layout_mode, set_provider_mode, AppState,
 };
+
+#[cfg(windows)]
+fn set_window_topmost(window: &tauri::Window, topmost: bool) {
+    use windows_sys::Win32::UI::WindowsAndMessaging::{
+        SetWindowPos, HWND_NOTOPMOST, HWND_TOPMOST, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE,
+    };
+    let _ = window.set_always_on_top(topmost);
+    if let Ok(hwnd) = window.hwnd() {
+        let insert = if topmost { HWND_TOPMOST } else { HWND_NOTOPMOST };
+        unsafe {
+            SetWindowPos(
+                hwnd.0 as _,
+                insert,
+                0,
+                0,
+                0,
+                0,
+                SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE,
+            );
+        }
+    }
+}
+
+#[cfg(not(windows))]
+fn set_window_topmost(window: &tauri::Window, topmost: bool) {
+    let _ = window.set_always_on_top(topmost);
+}
 
 /// Right-click context menu on the capsule window (replaces the WebView2
 /// default). Items use "ctx_" ids so they don't collide with the tray menu.
@@ -86,7 +115,20 @@ pub fn show_context_menu(window: tauri::Window) -> Result<(), String> {
     };
 
     let menu = build().map_err(|e| e.to_string())?;
-    menu.popup(window).map_err(|e| e.to_string())
+
+    // Capsule is HWND_TOPMOST; losing focus to the popup used to re-assert
+    // topmost and cover the menu. Drop topmost for the blocking popup lifetime.
+    app.state::<AppState>()
+        .context_menu_open
+        .store(true, Ordering::SeqCst);
+    set_window_topmost(&window, false);
+    let result = menu.popup(window.clone()).map_err(|e| e.to_string());
+    app.state::<AppState>()
+        .context_menu_open
+        .store(false, Ordering::SeqCst);
+    set_window_topmost(&window, true);
+
+    result
 }
 
 /// Handle context-menu item clicks (registered via `app.on_menu_event`).

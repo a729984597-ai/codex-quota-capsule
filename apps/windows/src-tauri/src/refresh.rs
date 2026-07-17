@@ -11,12 +11,12 @@ use tauri::{AppHandle, Emitter, Manager, State};
 
 use crate::model::{
     CapsuleViewModel, FontPreference, LastSuccessFile, LayoutPreference, ProviderPreference,
-    RefreshPayload,
+    RefreshPayload, WindowPosition,
 };
 use crate::persist::{
     last_success_path, read_font_preference, read_last_success, read_layout_preference,
     read_provider_preference, write_font_preference, write_last_success, write_layout_preference,
-    write_provider_preference,
+    write_provider_preference, write_window_position,
 };
 
 #[cfg(windows)]
@@ -40,6 +40,11 @@ pub struct AppState {
     pub refresh_in_flight: AtomicBool,
     pub refresh_pending: AtomicBool,
     pub last_success_at: Mutex<Option<Instant>>,
+    /// Skip persisting Moved events during expand/collapse programmatic moves.
+    pub suppress_position_save: AtomicBool,
+    /// While native context menu is open, do not re-assert HWND_TOPMOST
+    /// (that would cover the menu after focus loss).
+    pub context_menu_open: AtomicBool,
 }
 
 #[derive(Clone)]
@@ -109,8 +114,22 @@ impl AppState {
             refresh_in_flight: AtomicBool::new(false),
             refresh_pending: AtomicBool::new(false),
             last_success_at: Mutex::new(None),
+            suppress_position_save: AtomicBool::new(false),
+            context_menu_open: AtomicBool::new(false),
         }
     }
+}
+
+#[tauri::command]
+pub fn suppress_window_position_save(app: AppHandle, suppress: bool) {
+    app.state::<AppState>()
+        .suppress_position_save
+        .store(suppress, Ordering::SeqCst);
+}
+
+#[tauri::command]
+pub fn save_window_position(x: f64, y: f64) -> Result<(), String> {
+    write_window_position(&WindowPosition { x, y })
 }
 
 pub fn set_provider_mode(app: &AppHandle, mode: &str) -> Result<(), String> {
