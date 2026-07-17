@@ -1,8 +1,9 @@
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Mutex;
-use std::time::{Duration, Instant};
+use std::time::{Duration, Instant, SystemTime};
 
 #[cfg(windows)]
 use std::os::windows::process::CommandExt;
@@ -11,7 +12,7 @@ use tauri::{AppHandle, Emitter, Manager, State};
 
 use crate::model::{
     CapsuleViewModel, FontPreference, LastSuccessFile, LayoutPreference, ProviderPreference,
-    RefreshPayload, WindowPosition,
+    ProviderSlice, RefreshPayload, WindowPosition,
 };
 use crate::persist::{
     last_success_path, read_font_preference, read_last_success, read_layout_preference,
@@ -24,6 +25,14 @@ const CREATE_NO_WINDOW: u32 = 0x0800_0000;
 
 const MAX_CONSECUTIVE_FAILURES: u32 = 5;
 const STALE_MAX_AGE: Duration = Duration::from_secs(30 * 60);
+/// Only reuse a provider snapshot for optimistic UI if fresher than this.
+const OPTIMISTIC_CACHE_MAX_AGE: Duration = Duration::from_secs(10 * 60);
+
+#[derive(Clone)]
+pub(crate) struct CachedProviderVm {
+    vm: CapsuleViewModel,
+    cached_at: Instant,
+}
 
 pub struct AppState {
     pub view_model: Mutex<CapsuleViewModel>,
@@ -33,6 +42,8 @@ pub struct AppState {
     pub provider_mode: Mutex<String>,
     pub last_auto_provider: Mutex<String>,
     pub provider_menu_items: Mutex<Option<ProviderMenuItems>>,
+    /// Last successful single-provider snapshots for optimistic auto-switch.
+    pub provider_cache: Mutex<HashMap<String, CachedProviderVm>>,
     pub font_size: Mutex<String>,
     pub font_menu_items: Mutex<Option<FontMenuItems>>,
     pub layout_mode: Mutex<String>,
@@ -99,6 +110,12 @@ impl AppState {
         let pref = read_provider_preference();
         let font = read_font_preference();
         let layout = read_layout_preference();
+        let mut provider_cache = HashMap::new();
+        if let Some(saved) = read_last_success() {
+            // Approximate cache age from last-success file mtime; unknown → stale.
+            let cached_at = cache_instant_from_file(&last_success_path());
+            remember_provider_vm(&mut provider_cache, &saved.view_model, cached_at);
+        }
         Self {
             view_model: Mutex::new(CapsuleViewModel::placeholder()),
             consecutive_failures: Mutex::new(0),
@@ -107,6 +124,7 @@ impl AppState {
             provider_mode: Mutex::new(pref.mode),
             last_auto_provider: Mutex::new("codex".into()),
             provider_menu_items: Mutex::new(None),
+            provider_cache: Mutex::new(provider_cache),
             font_size: Mutex::new(font.size),
             font_menu_items: Mutex::new(None),
             layout_mode: Mutex::new(layout.mode),
@@ -151,6 +169,10 @@ pub fn set_provider_mode(app: &AppHandle, mode: &str) -> Result<(), String> {
         if let Some(items) = items_opt {
             items.set_checked(normalized);
         }
+    }
+    // Optimistic UI for forced single-provider switch, then live refresh.
+    if normalized == "cursor" || normalized == "codex" {
+        publish_optimistic_provider(app, normalized);
     }
     // Refresh now; if another refresh is mid-flight with the old mode, the
     // pending-retry in run_refresh + this deferred pass pick up "both"/etc.
@@ -246,8 +268,8 @@ pub fn get_layout_mode(app: AppHandle) -> String {
 }
 
 /// Lightweight foreground poll for "auto" mode. When the focused app's
-/// provider changes, update the remembered choice and trigger a refresh so
-/// the capsule switches sources promptly instead of waiting for the 60s loop.
+/// provider changes, flip the capsule to cached numbers immediately, then
+/// refresh in the background so the label doesn't wait on network I/O.
 pub fn poll_auto_switch(app: &AppHandle) {
     let state = app.state::<AppState>();
     let mode = match state.provider_mode.lock() {
@@ -274,6 +296,7 @@ pub fn poll_auto_switch(app: &AppHandle) {
         Err(_) => return,
     };
     if changed {
+        publish_optimistic_provider(app, &next);
         let handle = app.clone();
         let _ = std::thread::spawn(move || {
             let _ = run_refresh(&handle);
@@ -559,6 +582,9 @@ fn publish(
             .last_success_at
             .lock()
             .map_err(|e| e.to_string())? = Some(Instant::now());
+        if let Ok(mut cache) = state.provider_cache.lock() {
+            remember_provider_vm(&mut cache, &vm, Instant::now());
+        }
     }
 
     *state.view_model.lock().map_err(|e| e.to_string())? = vm.clone();
@@ -570,6 +596,109 @@ fn publish(
     app.emit("quota://updated", vm)
         .map_err(|e| e.to_string())?;
     Ok(())
+}
+
+fn remember_provider_vm(
+    cache: &mut HashMap<String, CachedProviderVm>,
+    vm: &CapsuleViewModel,
+    cached_at: Instant,
+) {
+    if let Some(providers) = &vm.providers {
+        for slice in providers {
+            if slice.provider == "cursor" || slice.provider == "codex" {
+                cache.insert(
+                    slice.provider.clone(),
+                    CachedProviderVm {
+                        vm: vm_from_slice(slice),
+                        cached_at,
+                    },
+                );
+            }
+        }
+        return;
+    }
+    if vm.provider == "cursor" || vm.provider == "codex" {
+        let mut single = vm.clone();
+        single.display_mode = "single".into();
+        single.providers = None;
+        cache.insert(
+            vm.provider.clone(),
+            CachedProviderVm {
+                vm: single,
+                cached_at,
+            },
+        );
+    }
+}
+
+fn vm_from_slice(slice: &ProviderSlice) -> CapsuleViewModel {
+    CapsuleViewModel {
+        provider: slice.provider.clone(),
+        display_mode: "single".into(),
+        state: slice.state.clone(),
+        tone: slice.tone.clone(),
+        status_label: slice.status_label.clone(),
+        judgment_text: slice.judgment_text.clone(),
+        used_percent: slice.used_percent,
+        usage_breakdown: slice.usage_breakdown.clone(),
+        reset_countdown_text: slice.reset_countdown_text.clone(),
+        freshness_text: slice.freshness_text.clone(),
+        is_stale: slice.is_stale,
+        diagnostic_code: slice.diagnostic_code.clone(),
+        fetched_at_iso: slice.fetched_at_iso.clone(),
+        resets_at_iso: slice.resets_at_iso.clone(),
+        providers: None,
+    }
+}
+
+fn switching_placeholder(provider: &str) -> CapsuleViewModel {
+    let mut vm = CapsuleViewModel::placeholder();
+    vm.provider = provider.into();
+    vm.display_mode = "single".into();
+    vm.status_label = "刷新中".into();
+    vm.judgment_text = "正在读取额度…".into();
+    vm.freshness_text = "刷新中…".into();
+    vm
+}
+
+fn cache_instant_from_file(path: &Path) -> Instant {
+    let age = std::fs::metadata(path)
+        .and_then(|m| m.modified())
+        .ok()
+        .and_then(|modified| SystemTime::now().duration_since(modified).ok());
+    match age {
+        Some(age) => Instant::now()
+            .checked_sub(age)
+            .unwrap_or_else(Instant::now),
+        // Unknown age → treat as already expired for optimistic reuse.
+        None => Instant::now()
+            .checked_sub(OPTIMISTIC_CACHE_MAX_AGE + Duration::from_secs(1))
+            .unwrap_or_else(Instant::now),
+    }
+}
+
+/// Show the last known numbers for `provider` immediately when the cache is
+/// fresher than OPTIMISTIC_CACHE_MAX_AGE; otherwise a lightweight placeholder.
+fn publish_optimistic_provider(app: &AppHandle, provider: &str) {
+    let state = app.state::<AppState>();
+    let cached = state
+        .provider_cache
+        .lock()
+        .ok()
+        .and_then(|g| g.get(provider).cloned());
+    let vm = match cached {
+        Some(entry) if entry.cached_at.elapsed() <= OPTIMISTIC_CACHE_MAX_AGE => {
+            let mut vm = entry.vm;
+            vm.provider = provider.into();
+            vm.display_mode = "single".into();
+            vm.providers = None;
+            vm.is_stale = true;
+            vm.freshness_text = "缓存 · 刷新中…".into();
+            vm
+        }
+        _ => switching_placeholder(provider),
+    };
+    let _ = publish(app, &state, vm, false);
 }
 
 #[tauri::command]
