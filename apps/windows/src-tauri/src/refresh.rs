@@ -487,7 +487,7 @@ pub fn resolve_bridge_root(app: &AppHandle) -> PathBuf {
 }
 
 pub fn apply_bridge_root(app: &AppHandle) {
-    let root = resolve_bridge_root(app);
+    let root = path_for_external_process(&resolve_bridge_root(app));
     if let Ok(mut guard) = app.state::<AppState>().workspace_root.lock() {
         *guard = root;
     }
@@ -684,20 +684,26 @@ fn spawn_refresh(
     provider_mode: &str,
     stale_from: Option<&Path>,
 ) -> Result<RefreshPayload, String> {
-    let out_path = std::env::temp_dir().join(format!(
+    // Node 22 on Windows mishandles Win32 extended paths (`\\?\C:\...`),
+    // producing EISDIR on `lstat('C:')`. Always pass verbatim DOS paths.
+    let node = path_for_external_process(node);
+    let script = path_for_external_process(script);
+    let bridge_root = path_for_external_process(bridge_root);
+    let out_path = path_for_external_process(&std::env::temp_dir().join(format!(
         "quota-capsule-refresh-{}.json",
         std::process::id()
-    ));
-    let mut cmd = Command::new(node);
-    cmd.arg(script);
+    )));
+
+    let mut cmd = Command::new(&node);
+    cmd.arg(&script);
     cmd.arg("--provider").arg(provider_mode);
     if let Some(path) = stale_from {
-        cmd.arg("--stale-from").arg(path);
+        cmd.arg("--stale-from").arg(path_for_external_process(path));
     }
     cmd.arg("--out").arg(&out_path);
     // Node 22 built-in sqlite is still experimental; required for large Cursor DBs.
     cmd.env("NODE_OPTIONS", "--experimental-sqlite");
-    cmd.current_dir(bridge_root);
+    cmd.current_dir(&bridge_root);
     #[cfg(windows)]
     cmd.creation_flags(CREATE_NO_WINDOW);
 
@@ -718,6 +724,26 @@ fn spawn_refresh(
             raw.chars().take(300).collect::<String>()
         )
     })
+}
+
+/// Strip Windows `\\?\` / `\\?\UNC\` prefixes so child processes (esp. Node 22)
+/// receive normal paths.
+fn path_for_external_process(path: &Path) -> PathBuf {
+    #[cfg(windows)]
+    {
+        let raw = path.to_string_lossy();
+        if let Some(rest) = raw.strip_prefix(r"\\?\") {
+            if let Some(unc) = rest.strip_prefix(r"UNC\") {
+                return PathBuf::from(format!(r"\\{unc}"));
+            }
+            return PathBuf::from(rest);
+        }
+        path.to_path_buf()
+    }
+    #[cfg(not(windows))]
+    {
+        path.to_path_buf()
+    }
 }
 
 fn publish(

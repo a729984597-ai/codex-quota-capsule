@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import { execFileSync } from "node:child_process";
 import { readFileSync, writeFileSync } from "node:fs";
+import { chdir } from "node:process";
 import {
   buildCapsuleViewModel,
   buildProviderSlice,
@@ -10,7 +11,28 @@ import {
 import { readCodexRateLimits } from "../packages/source-codex/dist/index.js";
 import { readCursorRateLimits } from "../packages/source-cursor/dist/index.js";
 
-const args = process.argv.slice(2);
+/** Node 22 on Windows can EISDIR on paths that still carry the `\\?\` prefix. */
+function stripWinLongPath(value) {
+  if (typeof value !== "string" || value.length === 0) return value;
+  if (value.startsWith("\\\\?\\UNC\\")) {
+    return `\\\\${value.slice("\\\\?\\UNC\\".length)}`;
+  }
+  if (value.startsWith("\\\\?\\")) {
+    return value.slice("\\\\?\\".length);
+  }
+  return value;
+}
+
+try {
+  const cwd = stripWinLongPath(process.cwd());
+  if (cwd && cwd !== process.cwd()) {
+    chdir(cwd);
+  }
+} catch {
+  // ignore cwd normalize failures
+}
+
+const args = process.argv.slice(2).map(stripWinLongPath);
 const staleFromIdx = args.indexOf("--stale-from");
 const staleFromPath =
   staleFromIdx >= 0 ? args[staleFromIdx + 1] : undefined;
