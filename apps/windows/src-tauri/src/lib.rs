@@ -12,8 +12,8 @@ use tauri_plugin_single_instance::init as single_instance_init;
 use crate::model::WindowPosition;
 use crate::persist::{read_window_position, write_window_position};
 use crate::refresh::{
-    apply_bridge_root, detect_workspace_root, get_font_size, get_view_model, poll_auto_switch,
-    refresh_now, run_refresh, AppState,
+    apply_bridge_root, detect_workspace_root, get_font_size, get_layout_mode, get_view_model,
+    poll_auto_switch, refresh_now, run_refresh, AppState,
 };
 use crate::tray::{handle_context_menu_event, setup_tray, show_context_menu};
 
@@ -68,7 +68,8 @@ pub fn run() {
             refresh_now,
             get_view_model,
             show_context_menu,
-            get_font_size
+            get_font_size,
+            get_layout_mode
         ])
         .setup(|app| {
             // Packaged .exe: prefer bundled resources next to the binary.

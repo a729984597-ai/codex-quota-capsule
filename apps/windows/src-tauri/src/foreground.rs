@@ -2,15 +2,15 @@
 //!
 //! Detection priority:
 //! 1. The owning process's full executable path (authoritative):
-//!    - path contains "openai.codex" / "\codex", or file is ChatGPT.exe -> codex
-//!      (the Codex desktop app ships as `...\OpenAI.Codex_x.y.z\app\ChatGPT.exe`
-//!      and recent builds are branded "ChatGPT")
-//!    - path contains "cursor" -> cursor
+//!    - file is ChatGPT.exe / codex.exe, or path contains "openai.codex" -> codex
+//!    - file is Cursor.exe, or path contains "\cursor\" -> cursor
 //! 2. Window title, but ONLY when the process is a terminal host (so a `codex`
 //!    CLI running inside Windows Terminal / cmd / PowerShell is detected).
-//!    Title is intentionally NOT used for GUI apps, because a Cursor window
-//!    editing a folder named e.g. "codex-quota-capsule" would otherwise be
-//!    misclassified as Codex.
+//!
+//! Deliberately NOT matching a bare "\codex" substring in the path: this app
+//! itself lives under `...\codex-quota-capsule\...`, and treating that as Codex
+//! would flip auto-mode whenever the capsule (or Explorer in that folder)
+//! briefly becomes foreground. Unrecognized windows keep the last choice.
 
 #[cfg(windows)]
 pub fn foreground_provider() -> Option<&'static str> {
@@ -20,16 +20,17 @@ pub fn foreground_provider() -> Option<&'static str> {
         let lower = p.to_ascii_lowercase();
         let file = lower.rsplit(['\\', '/']).next().unwrap_or(&lower);
 
-        // Codex desktop app: package path is `...\OpenAI.Codex_x.y.z\app\ChatGPT.exe`.
-        // Recent builds renamed the executable to ChatGPT.exe, so match either
-        // the install path or the file name.
-        if lower.contains("openai.codex")
-            || lower.contains("\\codex")
-            || file == "chatgpt.exe"
-        {
+        // Ignore our own process — path often contains "codex-quota-capsule".
+        if is_self_process(file) {
+            return None;
+        }
+
+        // Codex desktop app: `...\OpenAI.Codex_x.y.z\app\ChatGPT.exe`
+        if file == "chatgpt.exe" || file == "codex.exe" || lower.contains("openai.codex") {
             return Some("codex");
         }
-        if lower.contains("cursor") {
+        // Cursor IDE
+        if file == "cursor.exe" || lower.contains("\\cursor\\") || lower.contains("/cursor/") {
             return Some("cursor");
         }
 
@@ -50,6 +51,11 @@ pub fn foreground_provider() -> Option<&'static str> {
 #[cfg(not(windows))]
 pub fn foreground_provider() -> Option<&'static str> {
     None
+}
+
+#[cfg(windows)]
+fn is_self_process(file: &str) -> bool {
+    file.contains("quota capsule") || file.contains("quota-capsule")
 }
 
 #[cfg(windows)]

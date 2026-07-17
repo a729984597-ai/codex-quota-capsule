@@ -3,8 +3,8 @@ use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent}
 use tauri::{AppHandle, Manager};
 
 use crate::refresh::{
-    current_font_size, current_provider_mode, run_refresh, set_font_size, set_provider_mode,
-    AppState,
+    current_font_size, current_layout_mode, current_provider_mode, run_refresh, set_font_size,
+    set_layout_mode, set_provider_mode, AppState,
 };
 
 /// Right-click context menu on the capsule window (replaces the WebView2
@@ -14,6 +14,7 @@ pub fn show_context_menu(window: tauri::Window) -> Result<(), String> {
     let app = window.app_handle().clone();
     let mode = current_provider_mode(&app);
     let font = current_font_size(&app);
+    let layout = current_layout_mode(&app);
 
     let build = || -> tauri::Result<Menu<tauri::Wry>> {
         let refresh_i =
@@ -37,6 +38,18 @@ pub fn show_context_menu(window: tauri::Window) -> Result<(), String> {
             true,
             &[&auto_i, &cursor_i, &codex_i, &both_i],
         )?;
+        let layout_standard_i = CheckMenuItem::with_id(
+            &app, "ctx_layout_standard", "标准", true, layout == "standard", None::<&str>,
+        )?;
+        let layout_minimal_i = CheckMenuItem::with_id(
+            &app, "ctx_layout_minimal", "极简", true, layout == "minimal", None::<&str>,
+        )?;
+        let layout_menu = Submenu::with_items(
+            &app,
+            "显示",
+            true,
+            &[&layout_standard_i, &layout_minimal_i],
+        )?;
         let font_small_i = CheckMenuItem::with_id(
             &app, "ctx_font_small", "小", true, font == "small", None::<&str>,
         )?;
@@ -59,7 +72,16 @@ pub fn show_context_menu(window: tauri::Window) -> Result<(), String> {
         let quit_i = MenuItem::with_id(&app, "ctx_quit", "退出", true, None::<&str>)?;
         Menu::with_items(
             &app,
-            &[&refresh_i, &hide_i, &sep, &provider_menu, &font_menu, &sep, &quit_i],
+            &[
+                &refresh_i,
+                &hide_i,
+                &sep,
+                &provider_menu,
+                &layout_menu,
+                &font_menu,
+                &sep,
+                &quit_i,
+            ],
         )
     };
 
@@ -87,6 +109,10 @@ pub fn handle_context_menu_event(app: &AppHandle, id: &str) {
             let _ = std::thread::spawn(move || {
                 let _ = set_provider_mode(&handle, &mode);
             });
+        }
+        "ctx_layout_standard" | "ctx_layout_minimal" => {
+            let mode = id.trim_start_matches("ctx_layout_").to_string();
+            let _ = set_layout_mode(app, &mode);
         }
         "ctx_font_small" | "ctx_font_standard" | "ctx_font_large" | "ctx_font_xlarge" => {
             let size = id.trim_start_matches("ctx_font_").to_string();
@@ -131,6 +157,29 @@ pub fn setup_tray(app: &AppHandle) -> tauri::Result<()> {
         }
     }
 
+    let layout = current_layout_mode(app);
+    let layout_standard_i = CheckMenuItem::with_id(
+        app, "layout_standard", "标准", true, layout == "standard", None::<&str>,
+    )?;
+    let layout_minimal_i = CheckMenuItem::with_id(
+        app, "layout_minimal", "极简", true, layout == "minimal", None::<&str>,
+    )?;
+    let layout_menu = Submenu::with_items(
+        app,
+        "显示",
+        true,
+        &[&layout_standard_i, &layout_minimal_i],
+    )?;
+
+    if let Some(state) = app.try_state::<AppState>() {
+        if let Ok(mut guard) = state.layout_menu_items.lock() {
+            *guard = Some(crate::refresh::LayoutMenuItems {
+                standard: layout_standard_i.clone(),
+                minimal: layout_minimal_i.clone(),
+            });
+        }
+    }
+
     let font = current_font_size(app);
     let font_small_i =
         CheckMenuItem::with_id(app, "font_small", "小", true, font == "small", None::<&str>)?;
@@ -163,7 +212,17 @@ pub fn setup_tray(app: &AppHandle) -> tauri::Result<()> {
     let sep = PredefinedMenuItem::separator(app)?;
     let menu = Menu::with_items(
         app,
-        &[&show_i, &hide_i, &refresh_i, &sep, &provider_menu, &font_menu, &sep, &quit_i],
+        &[
+            &show_i,
+            &hide_i,
+            &refresh_i,
+            &sep,
+            &provider_menu,
+            &layout_menu,
+            &font_menu,
+            &sep,
+            &quit_i,
+        ],
     )?;
 
     let tooltip = app
@@ -217,6 +276,10 @@ pub fn setup_tray(app: &AppHandle) -> tauri::Result<()> {
                 let _ = std::thread::spawn(move || {
                     let _ = set_provider_mode(&handle, "both");
                 });
+            }
+            "layout_standard" | "layout_minimal" => {
+                let mode = event.id.as_ref().trim_start_matches("layout_").to_string();
+                let _ = set_layout_mode(app, &mode);
             }
             "font_small" | "font_standard" | "font_large" | "font_xlarge" => {
                 let size = event.id.as_ref().trim_start_matches("font_").to_string();

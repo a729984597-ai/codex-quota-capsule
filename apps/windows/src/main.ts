@@ -7,18 +7,20 @@ import {
   placeholderModel,
   renderCapsule,
   type CapsuleViewModel,
+  type LayoutMode,
 } from "./render";
 
 let expanded = false;
 let model: CapsuleViewModel = placeholderModel();
 let refreshing = false;
 let fontScale = 1;
+let layoutMode: LayoutMode = "standard";
 
 const FONT_SCALES: Record<string, number> = {
-  small: 0.85,
-  standard: 1,
-  large: 1.15,
-  xlarge: 1.3,
+  small: 1,
+  standard: 1.15,
+  large: 1.3,
+  xlarge: 1.45,
 };
 
 const DRAG_THRESHOLD_PX = 4;
@@ -32,42 +34,53 @@ function applyFontSize(size: string): void {
   void fitWindow();
 }
 
+function applyLayoutMode(mode: string): void {
+  layoutMode = mode === "minimal" ? "minimal" : "standard";
+  paint();
+  void fitWindow();
+}
+
 async function fitWindow(): Promise<void> {
-  const { width, height } = capsuleHeights(model, expanded);
+  const { width, height } = capsuleHeights(model, expanded, layoutMode);
   const win = getCurrentWindow();
   const scaledW = Math.round(width * fontScale);
+  const fallbackH = Math.round(height * fontScale);
 
-  if (expanded) {
-    await win.setSize(
-      new LogicalSize(scaledW, Math.round(height * fontScale)),
-    );
-    return;
-  }
-
-  // Collapsed: measure intrinsic content size (width:100% would just echo the
-  // current window, so temporarily switch to max-content).
+  // Measure intrinsic content size so expanded/collapsed windows hug content
+  // instead of leaving large top/bottom gaps from fixed heights + centering.
   const root = document.querySelector<HTMLElement>("#capsule");
   await new Promise<void>((resolve) => {
     requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
   });
 
   let measuredW = scaledW;
-  let measuredH = Math.round(height * fontScale);
+  let measuredH = fallbackH;
   if (root) {
     const prevWidth = root.style.width;
-    root.style.width = "max-content";
+    const prevHeight = root.style.height;
+    const prevBodyHeight = document.body.style.height;
+    document.body.style.height = "auto";
+    root.style.height = "auto";
+    if (!expanded) {
+      root.style.width = "max-content";
+    }
     await new Promise<void>((resolve) => {
       requestAnimationFrame(() => resolve());
     });
     const rect = root.getBoundingClientRect();
     root.style.width = prevWidth;
-    const safety = 6;
-    measuredW = Math.ceil(rect.width) + safety;
+    root.style.height = prevHeight;
+    document.body.style.height = prevBodyHeight;
+    const safety = expanded ? 4 : 6;
+    measuredW = Math.ceil(rect.width) + (expanded ? 0 : safety);
     measuredH = Math.ceil(rect.height) + safety;
   }
 
   await win.setSize(
-    new LogicalSize(Math.max(scaledW, measuredW), Math.max(1, measuredH)),
+    new LogicalSize(
+      expanded ? scaledW : Math.max(scaledW, measuredW),
+      Math.max(1, measuredH),
+    ),
   );
 }
 
@@ -81,7 +94,7 @@ function paint(): void {
   document.body.classList.toggle("is-expanded", expanded);
   const root = document.querySelector<HTMLElement>("#capsule");
   if (!root) return;
-  renderCapsule(root, model, expanded, refreshing);
+  renderCapsule(root, model, expanded, refreshing, layoutMode);
   root.querySelector("#refresh-btn")?.addEventListener("click", (event) => {
     event.stopPropagation();
     void refreshNow();
@@ -172,8 +185,16 @@ window.addEventListener("DOMContentLoaded", () => {
     applyFontSize(event.payload);
   });
 
+  void listen<string>("quota://layout-changed", (event) => {
+    applyLayoutMode(event.payload);
+  });
+
   void invoke<string>("get_font_size")
     .then(applyFontSize)
+    .catch(() => undefined);
+
+  void invoke<string>("get_layout_mode")
+    .then(applyLayoutMode)
     .catch(() => undefined);
 
   void invoke<CapsuleViewModel>("get_view_model")

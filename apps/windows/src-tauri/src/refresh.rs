@@ -10,11 +10,13 @@ use std::os::windows::process::CommandExt;
 use tauri::{AppHandle, Emitter, Manager, State};
 
 use crate::model::{
-    CapsuleViewModel, FontPreference, LastSuccessFile, ProviderPreference, RefreshPayload,
+    CapsuleViewModel, FontPreference, LastSuccessFile, LayoutPreference, ProviderPreference,
+    RefreshPayload,
 };
 use crate::persist::{
-    last_success_path, read_font_preference, read_last_success, read_provider_preference,
-    write_font_preference, write_last_success, write_provider_preference,
+    last_success_path, read_font_preference, read_last_success, read_layout_preference,
+    read_provider_preference, write_font_preference, write_last_success, write_layout_preference,
+    write_provider_preference,
 };
 
 #[cfg(windows)]
@@ -33,7 +35,10 @@ pub struct AppState {
     pub provider_menu_items: Mutex<Option<ProviderMenuItems>>,
     pub font_size: Mutex<String>,
     pub font_menu_items: Mutex<Option<FontMenuItems>>,
+    pub layout_mode: Mutex<String>,
+    pub layout_menu_items: Mutex<Option<LayoutMenuItems>>,
     pub refresh_in_flight: AtomicBool,
+    pub refresh_pending: AtomicBool,
     pub last_success_at: Mutex<Option<Instant>>,
 }
 
@@ -71,10 +76,24 @@ impl FontMenuItems {
     }
 }
 
+#[derive(Clone)]
+pub struct LayoutMenuItems {
+    pub standard: tauri::menu::CheckMenuItem<tauri::Wry>,
+    pub minimal: tauri::menu::CheckMenuItem<tauri::Wry>,
+}
+
+impl LayoutMenuItems {
+    pub fn set_checked(&self, mode: &str) {
+        let _ = self.standard.set_checked(mode == "standard");
+        let _ = self.minimal.set_checked(mode == "minimal");
+    }
+}
+
 impl AppState {
     pub fn new(workspace_root: PathBuf) -> Self {
         let pref = read_provider_preference();
         let font = read_font_preference();
+        let layout = read_layout_preference();
         Self {
             view_model: Mutex::new(CapsuleViewModel::placeholder()),
             consecutive_failures: Mutex::new(0),
@@ -85,7 +104,10 @@ impl AppState {
             provider_menu_items: Mutex::new(None),
             font_size: Mutex::new(font.size),
             font_menu_items: Mutex::new(None),
+            layout_mode: Mutex::new(layout.mode),
+            layout_menu_items: Mutex::new(None),
             refresh_in_flight: AtomicBool::new(false),
+            refresh_pending: AtomicBool::new(false),
             last_success_at: Mutex::new(None),
         }
     }
@@ -111,7 +133,14 @@ pub fn set_provider_mode(app: &AppHandle, mode: &str) -> Result<(), String> {
             items.set_checked(normalized);
         }
     }
+    // Refresh now; if another refresh is mid-flight with the old mode, the
+    // pending-retry in run_refresh + this deferred pass pick up "both"/etc.
     let _ = run_refresh(app);
+    let handle = app.clone();
+    let _ = std::thread::spawn(move || {
+        std::thread::sleep(Duration::from_millis(400));
+        let _ = run_refresh(&handle);
+    });
     Ok(())
 }
 
@@ -158,6 +187,43 @@ pub fn current_font_size(app: &AppHandle) -> String {
 #[tauri::command]
 pub fn get_font_size(app: AppHandle) -> String {
     current_font_size(&app)
+}
+
+pub fn set_layout_mode(app: &AppHandle, mode: &str) -> Result<(), String> {
+    let normalized = match mode {
+        "standard" | "minimal" => mode,
+        _ => return Err(format!("unsupported layout mode: {mode}")),
+    };
+    write_layout_preference(&LayoutPreference {
+        mode: normalized.into(),
+    })?;
+    {
+        let state = app.state::<AppState>();
+        *state.layout_mode.lock().map_err(|e| e.to_string())? = normalized.into();
+        let items_opt = state
+            .layout_menu_items
+            .lock()
+            .map_err(|e| e.to_string())?
+            .clone();
+        if let Some(items) = items_opt {
+            items.set_checked(normalized);
+        }
+    }
+    let _ = app.emit("quota://layout-changed", normalized.to_string());
+    Ok(())
+}
+
+pub fn current_layout_mode(app: &AppHandle) -> String {
+    app.state::<AppState>()
+        .layout_mode
+        .lock()
+        .map(|g| g.clone())
+        .unwrap_or_else(|_| "standard".into())
+}
+
+#[tauri::command]
+pub fn get_layout_mode(app: AppHandle) -> String {
+    current_layout_mode(&app)
 }
 
 /// Lightweight foreground poll for "auto" mode. When the focused app's
@@ -255,16 +321,28 @@ pub fn apply_bridge_root(app: &AppHandle) {
 
 pub fn run_refresh(app: &AppHandle) -> Result<CapsuleViewModel, String> {
     let state = app.state::<AppState>();
+    // If a refresh is already running, ask it to run once more afterward so a
+    // mid-flight provider switch (e.g. 都显示) is not lost.
     if state
         .refresh_in_flight
         .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
         .is_err()
     {
+        state.refresh_pending.store(true, Ordering::SeqCst);
         return Ok(state.view_model.lock().map_err(|e| e.to_string())?.clone());
     }
 
-    let result = refresh_inner(app);
+    let mut result = refresh_inner(app);
+    while state.refresh_pending.swap(false, Ordering::SeqCst) {
+        result = refresh_inner(app);
+    }
     state.refresh_in_flight.store(false, Ordering::SeqCst);
+
+    // Another caller may have set pending after we cleared in_flight but before
+    // we returned — kick one more pass so the latest mode always wins.
+    if state.refresh_pending.swap(false, Ordering::SeqCst) {
+        return run_refresh(app);
+    }
     result
 }
 

@@ -43,9 +43,9 @@ body:not(.is-expanded) .capsule {
 .capsule.expanded {
   flex-direction: column;
   align-items: stretch;
-  justify-content: center;
+  justify-content: flex-start;
   gap: 4px;
-  padding: 8px 12px;
+  padding: 6px 12px 8px;
   cursor: default;
 }
 
@@ -125,9 +125,52 @@ body:not(.is-expanded) .capsule {
 .capsule.dual {
   flex-direction: column;
   align-items: stretch;
-  justify-content: center;
+  justify-content: flex-start;
   gap: 2px;
   padding: 4px 10px;
+}
+
+.capsule.expanded.dual {
+  gap: 6px;
+  padding: 6px 12px 8px;
+}
+
+.capsule.minimal {
+  gap: 10px;
+  padding: 3px 10px;
+}
+
+.capsule.minimal.dual {
+  flex-direction: row;
+  align-items: center;
+  gap: 12px;
+  padding: 3px 10px;
+}
+
+.mini-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  white-space: nowrap;
+}
+
+.mini-sep {
+  color: rgba(232, 234, 237, 0.4);
+  font-weight: 500;
+  margin: 0 1px;
+}
+
+.mini-chip[data-tone="safe"] .dot {
+  background: #34a853;
+}
+.mini-chip[data-tone="watch"] .dot {
+  background: #f9ab00;
+}
+.mini-chip[data-tone="danger"] .dot {
+  background: #ea4335;
+}
+.mini-chip[data-tone="unknown"] .dot {
+  background: #9aa0a6;
 }
 
 .dual-row,
@@ -220,10 +263,13 @@ body:not(.is-expanded) .capsule {
   align-self: flex-end;
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: 4px;
+  margin-top: 6px;
   border: 0;
-  border-radius: 8px;
-  padding: 4px 10px;
+  border-radius: 6px;
+  padding: 1px 7px;
+  font-size: 10px;
+  line-height: 1.35;
   background: rgba(255, 255, 255, 0.12);
   color: inherit;
   cursor: pointer;
@@ -248,8 +294,8 @@ body:not(.is-expanded) .capsule {
 
 .refresh-spinner {
   display: none;
-  width: 10px;
-  height: 10px;
+  width: 8px;
+  height: 8px;
   border: 1.5px solid rgba(232, 234, 237, 0.25);
   border-top-color: rgba(232, 234, 237, 0.95);
   border-radius: 50%;

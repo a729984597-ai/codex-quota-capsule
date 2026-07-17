@@ -93,18 +93,43 @@ function usedHtml(
     : `已用 <b class="${pctClass(usedPercent)}">${Math.round(usedPercent)}%</b>`;
 }
 
+export type LayoutMode = "standard" | "minimal";
+
 export function renderCapsule(
   root: HTMLElement,
   model: CapsuleViewModel,
   expanded: boolean,
   refreshing = false,
+  layoutMode: LayoutMode = "standard",
 ): void {
   root.dataset.tone = model.tone;
   root.classList.toggle("expanded", expanded);
   root.classList.toggle("dual", model.displayMode === "both");
+  root.classList.toggle("minimal", layoutMode === "minimal" && !expanded);
   root.classList.toggle("refreshing", refreshing);
 
-  if (model.displayMode === "both" && model.providers?.length) {
+  const isDual =
+    (model.displayMode === "both" || model.provider === "both") &&
+    !!model.providers?.length;
+
+  // Minimal layout only affects the collapsed view; expand still shows detail.
+  if (!expanded && layoutMode === "minimal") {
+    if (isDual) {
+      root.innerHTML = (model.providers ?? [])
+        .map((p) => minimalChip(p.provider, p.usedPercent, p.tone, p.usageBreakdown))
+        .join("");
+      return;
+    }
+    root.innerHTML = minimalChip(
+      model.provider,
+      model.usedPercent,
+      model.tone,
+      model.usageBreakdown,
+    );
+    return;
+  }
+
+  if (isDual) {
     renderDual(root, model, expanded, refreshing);
     return;
   }
@@ -142,6 +167,28 @@ export function renderCapsule(
       <span class="refresh-spinner" aria-hidden="true"></span>
       <span class="refresh-label">${refreshLabel}</span>
     </button>
+  `;
+}
+
+function minimalChip(
+  provider: string,
+  usedPercent: number | null,
+  tone: CapsuleTone,
+  breakdown?: UsageBreakdown | null,
+): string {
+  const tag = providerLabel(provider === "both" ? "codex" : provider);
+  const hasSplit =
+    breakdown &&
+    (breakdown.autoPercent !== null || breakdown.apiPercent !== null);
+  const pctHtml = hasSplit
+    ? `<b class="${pctClass(breakdown.autoPercent)}">${escapeHtml(fmtPct(breakdown.autoPercent))}</b><span class="mini-sep">/</span><b class="${pctClass(breakdown.apiPercent)}">${escapeHtml(fmtPct(breakdown.apiPercent))}</b>`
+    : `<b class="${pctClass(usedPercent)}">${escapeHtml(fmtPct(usedPercent))}</b>`;
+  return `
+    <div class="mini-chip" data-tone="${escapeHtml(tone)}">
+      <span class="dot" aria-hidden="true"></span>
+      <span class="tag">${escapeHtml(tag)}</span>
+      ${pctHtml}
+    </div>
   `;
 }
 
@@ -245,22 +292,32 @@ export function placeholderModel(): CapsuleViewModel {
 }
 
 /** Window heights for single vs dual layouts. */
-export function capsuleHeights(model: CapsuleViewModel, expanded: boolean): {
+export function capsuleHeights(
+  model: CapsuleViewModel,
+  expanded: boolean,
+  layoutMode: LayoutMode = "standard",
+): {
   width: number;
   height: number;
 } {
   const hasCursorSplit =
     !!model.usageBreakdown ||
     !!model.providers?.some((p) => p.provider === "cursor" && p.usageBreakdown);
+  if (!expanded && layoutMode === "minimal") {
+    if (model.displayMode === "both") {
+      return { width: 240, height: 28 };
+    }
+    return { width: 140, height: 28 };
+  }
   if (model.displayMode === "both") {
-    // Codex block now renders a single usage bar too.
-    return { width: 380, height: expanded ? (hasCursorSplit ? 240 : 215) : 52 };
+    // Fallback heights; fitWindow measures real content when expanded.
+    return { width: 380, height: expanded ? (hasCursorSplit ? 210 : 185) : 52 };
   }
   if (hasCursorSplit) {
-    return { width: 340, height: expanded ? 165 : 36 };
+    return { width: 340, height: expanded ? 150 : 36 };
   }
   // Single provider with one usage bar (e.g. codex).
-  return { width: 300, height: expanded ? 150 : 36 };
+  return { width: 300, height: expanded ? 135 : 36 };
 }
 
 function escapeHtml(value: string): string {

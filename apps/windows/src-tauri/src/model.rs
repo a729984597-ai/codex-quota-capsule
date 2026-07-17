@@ -209,3 +209,18 @@ impl Default for FontPreference {
         }
     }
 }
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct LayoutPreference {
+    /// standard | minimal
+    pub mode: String,
+}
+
+impl Default for LayoutPreference {
+    fn default() -> Self {
+        Self {
+            mode: "standard".into(),
+        }
+    }
+}
