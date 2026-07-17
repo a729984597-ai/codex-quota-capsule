@@ -12,21 +12,73 @@ import {
 let expanded = false;
 let model: CapsuleViewModel = placeholderModel();
 let refreshing = false;
+let fontScale = 1;
+
+const FONT_SCALES: Record<string, number> = {
+  small: 0.85,
+  standard: 1,
+  large: 1.15,
+  xlarge: 1.3,
+};
 
 const DRAG_THRESHOLD_PX = 4;
 
-async function resizeForModel(): Promise<void> {
+function applyFontSize(size: string): void {
+  fontScale = FONT_SCALES[size] ?? 1;
+  // zoom scales the whole layout; the window is resized to match.
+  (document.body.style as CSSStyleDeclaration & { zoom: string }).zoom =
+    String(fontScale);
+  paint();
+  void fitWindow();
+}
+
+async function fitWindow(): Promise<void> {
   const { width, height } = capsuleHeights(model, expanded);
-  await getCurrentWindow().setSize(new LogicalSize(width, height));
+  const win = getCurrentWindow();
+  const scaledW = Math.round(width * fontScale);
+
+  if (expanded) {
+    await win.setSize(
+      new LogicalSize(scaledW, Math.round(height * fontScale)),
+    );
+    return;
+  }
+
+  // Collapsed: measure intrinsic content size (width:100% would just echo the
+  // current window, so temporarily switch to max-content).
+  const root = document.querySelector<HTMLElement>("#capsule");
+  await new Promise<void>((resolve) => {
+    requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
+  });
+
+  let measuredW = scaledW;
+  let measuredH = Math.round(height * fontScale);
+  if (root) {
+    const prevWidth = root.style.width;
+    root.style.width = "max-content";
+    await new Promise<void>((resolve) => {
+      requestAnimationFrame(() => resolve());
+    });
+    const rect = root.getBoundingClientRect();
+    root.style.width = prevWidth;
+    const safety = 6;
+    measuredW = Math.ceil(rect.width) + safety;
+    measuredH = Math.ceil(rect.height) + safety;
+  }
+
+  await win.setSize(
+    new LogicalSize(Math.max(scaledW, measuredW), Math.max(1, measuredH)),
+  );
 }
 
 async function setExpanded(next: boolean): Promise<void> {
   expanded = next;
-  await resizeForModel();
   paint();
+  await fitWindow();
 }
 
 function paint(): void {
+  document.body.classList.toggle("is-expanded", expanded);
   const root = document.querySelector<HTMLElement>("#capsule");
   if (!root) return;
   renderCapsule(root, model, expanded, refreshing);
@@ -48,6 +100,7 @@ async function refreshNow(): Promise<void> {
   } finally {
     refreshing = false;
     paint();
+    void fitWindow();
   }
 }
 
@@ -94,13 +147,15 @@ function bindDragAndToggle(root: HTMLElement): void {
 
 function applyViewModel(next: CapsuleViewModel): void {
   model = next;
-  void resizeForModel().then(paint);
+  paint();
+  void fitWindow();
 }
 
 window.addEventListener("DOMContentLoaded", () => {
   const root = document.querySelector<HTMLElement>("#capsule");
   if (!root) return;
   paint();
+  void fitWindow();
   bindDragAndToggle(root);
 
   // Replace the WebView2 default context menu with the app menu.
@@ -112,6 +167,14 @@ window.addEventListener("DOMContentLoaded", () => {
   void listen<CapsuleViewModel>("quota://updated", (event) => {
     applyViewModel(event.payload);
   });
+
+  void listen<string>("quota://font-changed", (event) => {
+    applyFontSize(event.payload);
+  });
+
+  void invoke<string>("get_font_size")
+    .then(applyFontSize)
+    .catch(() => undefined);
 
   void invoke<CapsuleViewModel>("get_view_model")
     .then(applyViewModel)

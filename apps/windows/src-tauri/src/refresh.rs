@@ -9,10 +9,12 @@ use std::os::windows::process::CommandExt;
 
 use tauri::{AppHandle, Emitter, Manager, State};
 
-use crate::model::{CapsuleViewModel, LastSuccessFile, ProviderPreference, RefreshPayload};
+use crate::model::{
+    CapsuleViewModel, FontPreference, LastSuccessFile, ProviderPreference, RefreshPayload,
+};
 use crate::persist::{
-    last_success_path, read_last_success, read_provider_preference, write_last_success,
-    write_provider_preference,
+    last_success_path, read_font_preference, read_last_success, read_provider_preference,
+    write_font_preference, write_last_success, write_provider_preference,
 };
 
 #[cfg(windows)]
@@ -29,6 +31,8 @@ pub struct AppState {
     pub provider_mode: Mutex<String>,
     pub last_auto_provider: Mutex<String>,
     pub provider_menu_items: Mutex<Option<ProviderMenuItems>>,
+    pub font_size: Mutex<String>,
+    pub font_menu_items: Mutex<Option<FontMenuItems>>,
     pub refresh_in_flight: AtomicBool,
     pub last_success_at: Mutex<Option<Instant>>,
 }
@@ -50,9 +54,27 @@ impl ProviderMenuItems {
     }
 }
 
+#[derive(Clone)]
+pub struct FontMenuItems {
+    pub small: tauri::menu::CheckMenuItem<tauri::Wry>,
+    pub standard: tauri::menu::CheckMenuItem<tauri::Wry>,
+    pub large: tauri::menu::CheckMenuItem<tauri::Wry>,
+    pub xlarge: tauri::menu::CheckMenuItem<tauri::Wry>,
+}
+
+impl FontMenuItems {
+    pub fn set_checked(&self, size: &str) {
+        let _ = self.small.set_checked(size == "small");
+        let _ = self.standard.set_checked(size == "standard");
+        let _ = self.large.set_checked(size == "large");
+        let _ = self.xlarge.set_checked(size == "xlarge");
+    }
+}
+
 impl AppState {
     pub fn new(workspace_root: PathBuf) -> Self {
         let pref = read_provider_preference();
+        let font = read_font_preference();
         Self {
             view_model: Mutex::new(CapsuleViewModel::placeholder()),
             consecutive_failures: Mutex::new(0),
@@ -61,6 +83,8 @@ impl AppState {
             provider_mode: Mutex::new(pref.mode),
             last_auto_provider: Mutex::new("codex".into()),
             provider_menu_items: Mutex::new(None),
+            font_size: Mutex::new(font.size),
+            font_menu_items: Mutex::new(None),
             refresh_in_flight: AtomicBool::new(false),
             last_success_at: Mutex::new(None),
         }
@@ -97,6 +121,43 @@ pub fn current_provider_mode(app: &AppHandle) -> String {
         .lock()
         .map(|g| g.clone())
         .unwrap_or_else(|_| "auto".into())
+}
+
+pub fn set_font_size(app: &AppHandle, size: &str) -> Result<(), String> {
+    let normalized = match size {
+        "small" | "standard" | "large" | "xlarge" => size,
+        _ => return Err(format!("unsupported font size: {size}")),
+    };
+    write_font_preference(&FontPreference {
+        size: normalized.into(),
+    })?;
+    {
+        let state = app.state::<AppState>();
+        *state.font_size.lock().map_err(|e| e.to_string())? = normalized.into();
+        let items_opt = state
+            .font_menu_items
+            .lock()
+            .map_err(|e| e.to_string())?
+            .clone();
+        if let Some(items) = items_opt {
+            items.set_checked(normalized);
+        }
+    }
+    let _ = app.emit("quota://font-changed", normalized.to_string());
+    Ok(())
+}
+
+pub fn current_font_size(app: &AppHandle) -> String {
+    app.state::<AppState>()
+        .font_size
+        .lock()
+        .map(|g| g.clone())
+        .unwrap_or_else(|_| "standard".into())
+}
+
+#[tauri::command]
+pub fn get_font_size(app: AppHandle) -> String {
+    current_font_size(&app)
 }
 
 /// Lightweight foreground poll for "auto" mode. When the focused app's

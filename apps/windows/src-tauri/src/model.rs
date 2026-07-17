@@ -194,3 +194,18 @@ impl Default for ProviderPreference {
         }
     }
 }
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct FontPreference {
+    /// small | standard | large | xlarge
+    pub size: String,
+}
+
+impl Default for FontPreference {
+    fn default() -> Self {
+        Self {
+            size: "standard".into(),
+        }
+    }
+}

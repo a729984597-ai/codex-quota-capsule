@@ -1,7 +1,7 @@
 use std::fs;
 use std::path::PathBuf;
 
-use crate::model::{LastSuccessFile, ProviderPreference, WindowPosition};
+use crate::model::{FontPreference, LastSuccessFile, ProviderPreference, WindowPosition};
 
 pub fn app_data_dir() -> PathBuf {
     let base = std::env::var_os("APPDATA")
@@ -66,6 +66,26 @@ pub fn read_provider_preference() -> ProviderPreference {
     let raw = match fs::read_to_string(path) {
         Ok(v) => v,
         Err(_) => return ProviderPreference::default(),
+    };
+    serde_json::from_str(&raw).unwrap_or_default()
+}
+
+pub fn font_preference_path() -> PathBuf {
+    app_data_dir().join("font-preference.json")
+}
+
+pub fn write_font_preference(pref: &FontPreference) -> Result<(), String> {
+    let dir = ensure_app_data_dir().map_err(|e| e.to_string())?;
+    let path = dir.join("font-preference.json");
+    let json = serde_json::to_string_pretty(pref).map_err(|e| e.to_string())?;
+    fs::write(path, json).map_err(|e| e.to_string())
+}
+
+pub fn read_font_preference() -> FontPreference {
+    let path = font_preference_path();
+    let raw = match fs::read_to_string(path) {
+        Ok(v) => v,
+        Err(_) => return FontPreference::default(),
     };
     serde_json::from_str(&raw).unwrap_or_default()
 }

@@ -254,13 +254,13 @@ export function capsuleHeights(model: CapsuleViewModel, expanded: boolean): {
     !!model.providers?.some((p) => p.provider === "cursor" && p.usageBreakdown);
   if (model.displayMode === "both") {
     // Codex block now renders a single usage bar too.
-    return { width: 300, height: expanded ? (hasCursorSplit ? 240 : 215) : 50 };
+    return { width: 380, height: expanded ? (hasCursorSplit ? 240 : 215) : 52 };
   }
   if (hasCursorSplit) {
-    return { width: 320, height: expanded ? 165 : 44 };
+    return { width: 340, height: expanded ? 165 : 36 };
   }
   // Single provider with one usage bar (e.g. codex).
-  return { width: 280, height: expanded ? 150 : 44 };
+  return { width: 300, height: expanded ? 150 : 36 };
 }
 
 function escapeHtml(value: string): string {
