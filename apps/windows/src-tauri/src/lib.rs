@@ -14,8 +14,8 @@ use crate::layering::{invalidate_hit_region, start_layer_watcher, sync_window_la
 use crate::model::WindowPosition;
 use crate::persist::{read_window_position, write_window_position};
 use crate::refresh::{
-    apply_bridge_root, detect_workspace_root, get_font_size, get_layout_mode, get_theme_mode,
-    get_view_model, poll_auto_switch, refresh_now, run_refresh, save_window_position,
+    apply_bridge_root, detect_workspace_root, get_font_size, get_layout_mode, get_provider_order,
+    get_theme_mode, get_view_model, poll_auto_switch, refresh_now, run_refresh, save_window_position,
     suppress_window_position_save, AppState,
 };
 use crate::tray::{handle_context_menu_event, setup_tray, show_context_menu};
@@ -52,6 +52,7 @@ pub fn run() {
             get_font_size,
             get_layout_mode,
             get_theme_mode,
+            get_provider_order,
             suppress_window_position_save,
             save_window_position
         ])

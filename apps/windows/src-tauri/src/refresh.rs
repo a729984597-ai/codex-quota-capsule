@@ -11,13 +11,14 @@ use std::os::windows::process::CommandExt;
 use tauri::{AppHandle, Emitter, Manager, State};
 
 use crate::model::{
-    CapsuleViewModel, FontPreference, LastSuccessFile, LayoutPreference, ProviderPreference,
-    ProviderSlice, RefreshPayload, ThemePreference, WindowPosition,
+    CapsuleViewModel, FontPreference, LastSuccessFile, LayoutPreference, ProviderOrderPreference,
+    ProviderPreference, ProviderSlice, RefreshPayload, ThemePreference, WindowPosition,
 };
 use crate::persist::{
     last_success_path, read_font_preference, read_last_success, read_layout_preference,
-    read_provider_preference, read_theme_preference, write_font_preference, write_last_success,
-    write_layout_preference, write_provider_preference, write_theme_preference,
+    read_provider_order_preference, read_provider_preference, read_theme_preference,
+    write_font_preference, write_last_success, write_layout_preference,
+    write_provider_order_preference, write_provider_preference, write_theme_preference,
     write_window_position,
 };
 
@@ -51,6 +52,8 @@ pub struct AppState {
     pub layout_menu_items: Mutex<Option<LayoutMenuItems>>,
     pub theme_mode: Mutex<String>,
     pub theme_menu_items: Mutex<Option<ThemeMenuItems>>,
+    pub provider_order: Mutex<String>,
+    pub provider_order_menu_items: Mutex<Option<ProviderOrderMenuItems>>,
     pub refresh_in_flight: AtomicBool,
     pub refresh_pending: AtomicBool,
     pub last_success_at: Mutex<Option<Instant>>,
@@ -121,12 +124,26 @@ impl ThemeMenuItems {
     }
 }
 
+#[derive(Clone)]
+pub struct ProviderOrderMenuItems {
+    pub cursor_first: tauri::menu::CheckMenuItem<tauri::Wry>,
+    pub codex_first: tauri::menu::CheckMenuItem<tauri::Wry>,
+}
+
+impl ProviderOrderMenuItems {
+    pub fn set_checked(&self, order: &str) {
+        let _ = self.cursor_first.set_checked(order == "cursor-first");
+        let _ = self.codex_first.set_checked(order == "codex-first");
+    }
+}
+
 impl AppState {
     pub fn new(workspace_root: PathBuf) -> Self {
         let pref = read_provider_preference();
         let font = read_font_preference();
         let layout = read_layout_preference();
         let theme = read_theme_preference();
+        let order = read_provider_order_preference();
         let mut provider_cache = HashMap::new();
         if let Some(saved) = read_last_success() {
             // Approximate cache age from last-success file mtime; unknown → stale.
@@ -148,6 +165,8 @@ impl AppState {
             layout_menu_items: Mutex::new(None),
             theme_mode: Mutex::new(theme.mode),
             theme_menu_items: Mutex::new(None),
+            provider_order: Mutex::new(order.order),
+            provider_order_menu_items: Mutex::new(None),
             refresh_in_flight: AtomicBool::new(false),
             refresh_pending: AtomicBool::new(false),
             last_success_at: Mutex::new(None),
@@ -321,6 +340,50 @@ pub fn current_theme_mode(app: &AppHandle) -> String {
 #[tauri::command]
 pub fn get_theme_mode(app: AppHandle) -> String {
     current_theme_mode(&app)
+}
+
+pub fn set_provider_order(app: &AppHandle, order: &str) -> Result<(), String> {
+    let normalized = match order {
+        "cursor-first" | "codex-first" => order,
+        _ => return Err(format!("unsupported provider order: {order}")),
+    };
+    write_provider_order_preference(&ProviderOrderPreference {
+        order: normalized.into(),
+    })?;
+    {
+        let state = app.state::<AppState>();
+        *state.provider_order.lock().map_err(|e| e.to_string())? = normalized.into();
+        let items_opt = state
+            .provider_order_menu_items
+            .lock()
+            .map_err(|e| e.to_string())?
+            .clone();
+        if let Some(items) = items_opt {
+            items.set_checked(normalized);
+        }
+        let mut vm = state.view_model.lock().map_err(|e| e.to_string())?.clone();
+        vm.apply_provider_order(normalized);
+        *state.view_model.lock().map_err(|e| e.to_string())? = vm.clone();
+        if let Some(tray) = app.tray_by_id("main") {
+            let _ = tray.set_tooltip(Some(vm.tooltip()));
+        }
+        app.emit("quota://updated", vm)
+            .map_err(|e| e.to_string())?;
+    }
+    Ok(())
+}
+
+pub fn current_provider_order(app: &AppHandle) -> String {
+    app.state::<AppState>()
+        .provider_order
+        .lock()
+        .map(|g| g.clone())
+        .unwrap_or_else(|_| "cursor-first".into())
+}
+
+#[tauri::command]
+pub fn get_provider_order(app: AppHandle) -> String {
+    current_provider_order(&app)
 }
 
 /// Lightweight foreground poll for "auto" mode. When the focused app's
@@ -749,7 +812,7 @@ fn path_for_external_process(path: &Path) -> PathBuf {
 fn publish(
     app: &AppHandle,
     state: &State<'_, AppState>,
-    vm: CapsuleViewModel,
+    mut vm: CapsuleViewModel,
     success: bool,
 ) -> Result<(), String> {
     if success {
@@ -765,6 +828,13 @@ fn publish(
             remember_provider_vm(&mut cache, &vm, Instant::now());
         }
     }
+
+    let order = state
+        .provider_order
+        .lock()
+        .map(|g| g.clone())
+        .unwrap_or_else(|_| "cursor-first".into());
+    vm.apply_provider_order(&order);
 
     *state.view_model.lock().map_err(|e| e.to_string())? = vm.clone();
 

@@ -2,8 +2,8 @@ use std::fs;
 use std::path::PathBuf;
 
 use crate::model::{
-    FontPreference, LastSuccessFile, LayoutPreference, ProviderPreference, ThemePreference,
-    WindowPosition,
+    FontPreference, LastSuccessFile, LayoutPreference, ProviderOrderPreference, ProviderPreference,
+    ThemePreference, WindowPosition,
 };
 
 fn strip_bom(raw: &str) -> &str {
@@ -133,6 +133,26 @@ pub fn read_theme_preference() -> ThemePreference {
     let raw = match fs::read_to_string(path) {
         Ok(v) => v,
         Err(_) => return ThemePreference::default(),
+    };
+    serde_json::from_str(strip_bom(&raw)).unwrap_or_default()
+}
+
+pub fn provider_order_preference_path() -> PathBuf {
+    app_data_dir().join("provider-order-preference.json")
+}
+
+pub fn write_provider_order_preference(pref: &ProviderOrderPreference) -> Result<(), String> {
+    let dir = ensure_app_data_dir().map_err(|e| e.to_string())?;
+    let path = dir.join("provider-order-preference.json");
+    let json = serde_json::to_string_pretty(pref).map_err(|e| e.to_string())?;
+    fs::write(path, json).map_err(|e| e.to_string())
+}
+
+pub fn read_provider_order_preference() -> ProviderOrderPreference {
+    let path = provider_order_preference_path();
+    let raw = match fs::read_to_string(path) {
+        Ok(v) => v,
+        Err(_) => return ProviderOrderPreference::default(),
     };
     serde_json::from_str(strip_bom(&raw)).unwrap_or_default()
 }

@@ -5,8 +5,9 @@ use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent}
 use tauri::{AppHandle, Manager};
 
 use crate::refresh::{
-    current_font_size, current_layout_mode, current_provider_mode, current_theme_mode, run_refresh,
-    set_font_size, set_layout_mode, set_provider_mode, set_theme_mode, AppState,
+    current_font_size, current_layout_mode, current_provider_mode, current_provider_order,
+    current_theme_mode, run_refresh, set_font_size, set_layout_mode, set_provider_mode,
+    set_provider_order, set_theme_mode, AppState,
 };
 
 /// Right-click context menu on the capsule window (replaces the WebView2
@@ -18,6 +19,7 @@ pub fn show_context_menu(window: tauri::Window) -> Result<(), String> {
     let font = current_font_size(&app);
     let layout = current_layout_mode(&app);
     let theme = current_theme_mode(&app);
+    let order = current_provider_order(&app);
 
     let build = || -> tauri::Result<Menu<tauri::Wry>> {
         let refresh_i =
@@ -52,6 +54,28 @@ pub fn show_context_menu(window: tauri::Window) -> Result<(), String> {
             "显示",
             true,
             &[&layout_standard_i, &layout_minimal_i],
+        )?;
+        let order_cursor_i = CheckMenuItem::with_id(
+            &app,
+            "ctx_order_cursor-first",
+            "Cursor 在前",
+            true,
+            order == "cursor-first",
+            None::<&str>,
+        )?;
+        let order_codex_i = CheckMenuItem::with_id(
+            &app,
+            "ctx_order_codex-first",
+            "Codex 在前",
+            true,
+            order == "codex-first",
+            None::<&str>,
+        )?;
+        let order_menu = Submenu::with_items(
+            &app,
+            "顺序",
+            true,
+            &[&order_cursor_i, &order_codex_i],
         )?;
         let theme_dark_i = CheckMenuItem::with_id(
             &app, "ctx_theme_dark", "深色", true, theme == "dark", None::<&str>,
@@ -93,6 +117,7 @@ pub fn show_context_menu(window: tauri::Window) -> Result<(), String> {
                 &sep,
                 &provider_menu,
                 &layout_menu,
+                &order_menu,
                 &theme_menu,
                 &font_menu,
                 &sep,
@@ -140,6 +165,10 @@ pub fn handle_context_menu_event(app: &AppHandle, id: &str) {
         "ctx_layout_standard" | "ctx_layout_minimal" => {
             let mode = id.trim_start_matches("ctx_layout_").to_string();
             let _ = set_layout_mode(app, &mode);
+        }
+        "ctx_order_cursor-first" | "ctx_order_codex-first" => {
+            let order = id.trim_start_matches("ctx_order_").to_string();
+            let _ = set_provider_order(app, &order);
         }
         "ctx_theme_dark" | "ctx_theme_light" => {
             let mode = id.trim_start_matches("ctx_theme_").to_string();
@@ -211,6 +240,39 @@ pub fn setup_tray(app: &AppHandle) -> tauri::Result<()> {
         }
     }
 
+    let order = current_provider_order(app);
+    let order_cursor_i = CheckMenuItem::with_id(
+        app,
+        "order_cursor-first",
+        "Cursor 在前",
+        true,
+        order == "cursor-first",
+        None::<&str>,
+    )?;
+    let order_codex_i = CheckMenuItem::with_id(
+        app,
+        "order_codex-first",
+        "Codex 在前",
+        true,
+        order == "codex-first",
+        None::<&str>,
+    )?;
+    let order_menu = Submenu::with_items(
+        app,
+        "顺序",
+        true,
+        &[&order_cursor_i, &order_codex_i],
+    )?;
+
+    if let Some(state) = app.try_state::<AppState>() {
+        if let Ok(mut guard) = state.provider_order_menu_items.lock() {
+            *guard = Some(crate::refresh::ProviderOrderMenuItems {
+                cursor_first: order_cursor_i.clone(),
+                codex_first: order_codex_i.clone(),
+            });
+        }
+    }
+
     let theme = current_theme_mode(app);
     let theme_dark_i =
         CheckMenuItem::with_id(app, "theme_dark", "深色", true, theme == "dark", None::<&str>)?;
@@ -267,6 +329,7 @@ pub fn setup_tray(app: &AppHandle) -> tauri::Result<()> {
             &sep,
             &provider_menu,
             &layout_menu,
+            &order_menu,
             &theme_menu,
             &font_menu,
             &sep,
@@ -329,6 +392,10 @@ pub fn setup_tray(app: &AppHandle) -> tauri::Result<()> {
             "layout_standard" | "layout_minimal" => {
                 let mode = event.id.as_ref().trim_start_matches("layout_").to_string();
                 let _ = set_layout_mode(app, &mode);
+            }
+            "order_cursor-first" | "order_codex-first" => {
+                let order = event.id.as_ref().trim_start_matches("order_").to_string();
+                let _ = set_provider_order(app, &order);
             }
             "theme_dark" | "theme_light" => {
                 let mode = event.id.as_ref().trim_start_matches("theme_").to_string();

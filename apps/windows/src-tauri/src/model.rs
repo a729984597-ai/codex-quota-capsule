@@ -248,3 +248,61 @@ impl Default for ThemePreference {
         }
     }
 }
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct ProviderOrderPreference {
+    /// cursor-first | codex-first
+    pub order: String,
+}
+
+impl Default for ProviderOrderPreference {
+    fn default() -> Self {
+        Self {
+            order: "cursor-first".into(),
+        }
+    }
+}
+
+impl CapsuleViewModel {
+    /// Reorder dual `providers` and rebuild `judgment_text` to match.
+    pub fn apply_provider_order(&mut self, order: &str) {
+        let Some(providers) = self.providers.as_mut() else {
+            return;
+        };
+        if providers.len() < 2 {
+            return;
+        }
+        let codex_first = order == "codex-first";
+        providers.sort_by_key(|p| {
+            let is_codex = p.provider == "codex";
+            match (codex_first, is_codex) {
+                (true, true) | (false, false) => 0u8,
+                _ => 1u8,
+            }
+        });
+        self.judgment_text = providers
+            .iter()
+            .map(|p| {
+                format!(
+                    "{} {}",
+                    label_provider(&p.provider),
+                    format_slice_status_line(p)
+                )
+            })
+            .collect::<Vec<_>>()
+            .join("；");
+    }
+}
+
+fn format_slice_status_line(slice: &ProviderSlice) -> String {
+    let Some(used) = slice.used_percent else {
+        return format!("{} —", slice.status_label);
+    };
+    let pct = if slice.provider == "codex" {
+        (100.0 - used).round()
+    } else {
+        used.round()
+    };
+    format!("{} {:.0}%", slice.status_label, pct)
+}
