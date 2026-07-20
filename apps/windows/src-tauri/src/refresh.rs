@@ -619,8 +619,7 @@ fn refresh_inner(app: &AppHandle) -> Result<CapsuleViewModel, String> {
             _ => "codex",
         };
         let vm = CapsuleViewModel::node_missing(label);
-        publish(app, &state, vm.clone(), false)?;
-        return Ok(vm);
+        return publish(app, &state, vm, false);
     };
 
     let script = script_path(&root);
@@ -634,8 +633,7 @@ fn refresh_inner(app: &AppHandle) -> Result<CapsuleViewModel, String> {
             "刷新桥接脚本缺失：{}。请重新安装应用，或设置 QUOTA_CAPSULE_ROOT 指向仓库根目录。",
             script.display()
         );
-        publish(app, &state, vm.clone(), false)?;
-        return Ok(vm);
+        return publish(app, &state, vm, false);
     }
 
     let provider_mode = state
@@ -673,8 +671,7 @@ fn refresh_inner(app: &AppHandle) -> Result<CapsuleViewModel, String> {
             resets_at_iso: vm.resets_at_iso.clone(),
             view_model: vm.clone(),
         });
-        publish(app, &state, vm.clone(), true)?;
-        return Ok(vm);
+        return publish(app, &state, vm, true);
     }
 
     // Failure path: try stale rebuild via bridge
@@ -736,8 +733,7 @@ fn refresh_inner(app: &AppHandle) -> Result<CapsuleViewModel, String> {
         live.view_model
     };
 
-    publish(app, &state, vm.clone(), false)?;
-    Ok(vm)
+    publish(app, &state, vm, false)
 }
 
 fn spawn_refresh(
@@ -814,7 +810,7 @@ fn publish(
     state: &State<'_, AppState>,
     mut vm: CapsuleViewModel,
     success: bool,
-) -> Result<(), String> {
+) -> Result<CapsuleViewModel, String> {
     if success {
         *state
             .consecutive_failures
@@ -842,9 +838,9 @@ fn publish(
         let _ = tray.set_tooltip(Some(vm.tooltip()));
     }
 
-    app.emit("quota://updated", vm)
+    app.emit("quota://updated", vm.clone())
         .map_err(|e| e.to_string())?;
-    Ok(())
+    Ok(vm)
 }
 
 fn remember_provider_vm(
