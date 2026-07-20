@@ -248,7 +248,7 @@ function breakdownBars(breakdown?: UsageBreakdown | null): string {
   return `
     <div class="usage-split">
       <div class="usage-line">
-        <span class="usage-name">Auto+Composer</span>
+        <span class="usage-name">Auto</span>
         <span class="usage-bar"><span class="${fillClass(breakdown.autoPercent)}" style="width:${barWidth(breakdown.autoPercent)}%"></span></span>
         <span class="usage-pct ${pctClass(breakdown.autoPercent)}">${escapeHtml(fmtPct(breakdown.autoPercent))}</span>
       </div>
@@ -366,7 +366,7 @@ export function capsuleHeights(
   if (model.displayMode === "both") {
     // Fallback heights; fitWindow measures real content when expanded.
     // Slightly wider when expanded so usage bars read ~60% of the row.
-    return { width: expanded ? 420 : 380, height: expanded ? (hasCursorSplit ? 210 : 185) : 52 };
+    return { width: expanded ? 360 : 380, height: expanded ? (hasCursorSplit ? 210 : 185) : 52 };
   }
   if (hasCursorSplit) {
     return { width: expanded ? 380 : 340, height: expanded ? 150 : 36 };

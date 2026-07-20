@@ -139,19 +139,24 @@ body:not(.is-expanded) .capsule {
   flex-direction: column;
   gap: 6px;
   width: 100%;
+  max-width: 100%;
+  min-width: 0;
   align-self: stretch;
   box-sizing: border-box;
 }
 
 .usage-line {
   display: grid;
-  grid-template-columns: 6.75rem minmax(0, 1fr) 2.5em;
+  /* Fixed label column so Auto/API (and 剩余) bars share the same track length */
+  grid-template-columns: 2.75rem minmax(0, 1fr) 2.75em;
   align-items: center;
   gap: 8px;
   width: 100%;
+  max-width: 100%;
   box-sizing: border-box;
   font-size: 11px;
   color: var(--text-secondary);
+  min-width: 0;
 }
 
 .usage-name {
@@ -168,7 +173,7 @@ body:not(.is-expanded) .capsule {
   background: var(--bar-track);
   overflow: hidden;
   width: 100%;
-  min-width: 72px;
+  min-width: 0;
 }
 
 .usage-bar .usage-fill {
@@ -326,7 +331,10 @@ body:not(.is-expanded) .capsule {
   align-items: stretch;
   gap: 6px;
   width: 100%;
+  max-width: 100%;
+  min-width: 0;
   box-sizing: border-box;
+  overflow: hidden;
 }
 
 .capsule.expanded.dual .dual-block + .dual-block {
@@ -400,6 +408,10 @@ body:not(.is-expanded) .capsule {
   font-size: 12px;
   font-weight: 500;
   line-height: 1.4;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  max-width: 100%;
 }
 
 .meta {

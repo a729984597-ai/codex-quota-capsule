@@ -156,3 +156,48 @@ pub fn read_provider_order_preference() -> ProviderOrderPreference {
     };
     serde_json::from_str(strip_bom(&raw)).unwrap_or_default()
 }
+
+/// Append a line to the local diagnostic log (best-effort, never panics).
+pub fn append_diagnostic_log(line: &str) {
+    let Ok(dir) = ensure_app_data_dir() else {
+        return;
+    };
+    let path = dir.join("diagnostic.log");
+    let ts = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
+    let entry = format!("[unix:{ts}] {line}\n");
+    let _ = fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(path)
+        .and_then(|mut f| {
+            use std::io::Write;
+            f.write_all(entry.as_bytes())
+        });
+}
+
+/// Capture Rust panics to diagnostic.log before the process aborts.
+pub fn install_panic_hook() {
+    let default = std::panic::take_hook();
+    std::panic::set_hook(Box::new(move |info| {
+        let thread = std::thread::current();
+        let name = thread.name().unwrap_or("<unnamed>");
+        let payload = if let Some(s) = info.payload().downcast_ref::<&str>() {
+            (*s).to_string()
+        } else if let Some(s) = info.payload().downcast_ref::<String>() {
+            s.clone()
+        } else {
+            "non-string panic payload".into()
+        };
+        let location = info
+            .location()
+            .map(|l| format!("{}:{}:{}", l.file(), l.line(), l.column()))
+            .unwrap_or_else(|| "<unknown>".into());
+        append_diagnostic_log(&format!(
+            "PANIC thread={name} at {location} :: {payload}"
+        ));
+        default(info);
+    }));
+}

@@ -105,9 +105,9 @@ async function fitWindow(mode: FitMode = "resize"): Promise<void> {
     const prevBodyHeight = document.body.style.height;
     document.body.style.height = "auto";
     root.style.height = "auto";
-    if (!expanded) {
-      root.style.width = "max-content";
-    }
+    // Always measure intrinsic width — expanded dual + usage bars need it,
+    // otherwise a fixed window width clips bars/text past the rounded edge.
+    root.style.width = "max-content";
     await new Promise<void>((resolve) => {
       requestAnimationFrame(() => resolve());
     });
@@ -117,11 +117,11 @@ async function fitWindow(mode: FitMode = "resize"): Promise<void> {
     document.body.style.height = prevBodyHeight;
     // Keep the HWND flush to the visible capsule — extra padding steals tray clicks.
     const safety = 0;
-    measuredW = Math.ceil(rect.width) + (expanded ? 0 : safety);
+    measuredW = Math.ceil(rect.width) + safety;
     measuredH = Math.ceil(rect.height) + safety;
   }
 
-  const nextW = expanded ? scaledW : Math.max(scaledW, measuredW);
+  const nextW = Math.max(scaledW, measuredW);
   const nextH = Math.max(1, measuredH);
   const nextWPhys = Math.round(nextW * scale);
   const nextHPhys = Math.round(nextH * scale);
@@ -281,10 +281,21 @@ function bindDragAndToggle(root: HTMLElement): void {
       void setExpanded(!expanded);
       return;
     }
-    if (wasDragging && event.type === "pointerup" && !expanded) {
+    // Persist after any user drag — not on OS-driven Moved events (display wake).
+    if (wasDragging && event.type === "pointerup") {
       void (async () => {
-        const pos = await getCurrentWindow().outerPosition();
+        const win = getCurrentWindow();
+        const pos = await win.outerPosition();
+        const size = await win.outerSize();
         await persistCollapsedPosition(pos.x, pos.y);
+        if (!expanded) {
+          collapsedFrame = {
+            x: pos.x,
+            y: pos.y,
+            width: size.width,
+            height: size.height,
+          };
+        }
       })();
     }
   };

@@ -1,0 +1,144 @@
+//! Persist user placement and restore it after display sleep/wake glitches.
+//!
+//! Windows often fires spurious `Moved` events (or relocates the HWND) when a
+//! monitor powers off/on. We only trust positions saved by explicit user drag /
+//! expand-collapse, and re-apply that preferred spot when the display topology
+//! changes.
+
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Mutex;
+use std::time::Duration;
+
+use tauri::{AppHandle, Manager, PhysicalPosition};
+
+use crate::persist::{append_diagnostic_log, read_window_position};
+use crate::refresh::AppState;
+
+static RESTORE_IN_FLIGHT: AtomicBool = AtomicBool::new(false);
+
+/// Re-apply the last user-saved position after a short settle delay.
+pub fn restore_saved_position(app: &AppHandle, reason: &str) {
+    let Some(pos) = read_window_position() else {
+        return;
+    };
+    if RESTORE_IN_FLIGHT.swap(true, Ordering::SeqCst) {
+        return;
+    }
+    let handle = app.clone();
+    let reason = reason.to_string();
+    std::thread::spawn(move || {
+        // Display topology needs a moment to settle after power-on.
+        for delay_ms in [250u64, 800, 1600] {
+            std::thread::sleep(Duration::from_millis(delay_ms));
+            let app = handle.clone();
+            let app_main = app.clone();
+            let reason = reason.clone();
+            let pos = pos.clone();
+            let _ = app.run_on_main_thread(move || {
+                apply_position(&app_main, &pos, &reason);
+            });
+        }
+        RESTORE_IN_FLIGHT.store(false, Ordering::SeqCst);
+    });
+}
+
+fn apply_position(app: &AppHandle, pos: &crate::model::WindowPosition, reason: &str) {
+    let Some(win) = app.get_webview_window("main") else {
+        return;
+    };
+    app.state::<AppState>()
+        .suppress_position_save
+        .store(true, Ordering::SeqCst);
+    let _ = win.set_position(PhysicalPosition::new(pos.x as i32, pos.y as i32));
+    crate::layering::sync_window_layer(&win);
+    app.state::<AppState>()
+        .suppress_position_save
+        .store(false, Ordering::SeqCst);
+    append_diagnostic_log(&format!(
+        "placement restore ({reason}) -> ({:.0},{:.0})",
+        pos.x, pos.y
+    ));
+}
+
+/// Watch for monitor layout changes (sleep/wake, cable reconnect) and restore.
+pub fn start_display_watcher(app: AppHandle) {
+    std::thread::spawn(move || {
+        let last = Mutex::new(monitor_fingerprint());
+        loop {
+            std::thread::sleep(Duration::from_secs(2));
+            let next = monitor_fingerprint();
+            let changed = {
+                let mut guard = match last.lock() {
+                    Ok(g) => g,
+                    Err(_) => continue,
+                };
+                if *guard == next {
+                    false
+                } else {
+                    *guard = next;
+                    true
+                }
+            };
+            if changed {
+                append_diagnostic_log("display topology changed");
+                restore_saved_position(&app, "display-change");
+            }
+        }
+    });
+}
+
+#[cfg(windows)]
+fn monitor_fingerprint() -> String {
+    use std::sync::Mutex;
+    use windows_sys::Win32::Foundation::{BOOL, LPARAM, RECT};
+    use windows_sys::Win32::Graphics::Gdi::{EnumDisplayMonitors, HDC, HMONITOR};
+
+    struct Acc {
+        parts: Vec<String>,
+    }
+    static ACC: Mutex<Option<Acc>> = Mutex::new(None);
+
+    unsafe extern "system" fn callback(
+        _monitor: HMONITOR,
+        _hdc: HDC,
+        rect: *mut RECT,
+        _data: LPARAM,
+    ) -> BOOL {
+        if rect.is_null() {
+            return 1;
+        }
+        let r = unsafe { *rect };
+        if let Ok(mut guard) = ACC.lock() {
+            if let Some(acc) = guard.as_mut() {
+                acc.parts.push(format!(
+                    "{}:{}:{}:{}",
+                    r.left, r.top, r.right, r.bottom
+                ));
+            }
+        }
+        1
+    }
+
+    if let Ok(mut guard) = ACC.lock() {
+        *guard = Some(Acc { parts: Vec::new() });
+    }
+    unsafe {
+        EnumDisplayMonitors(std::ptr::null_mut(), std::ptr::null(), Some(callback), 0);
+    }
+    let parts = ACC
+        .lock()
+        .ok()
+        .and_then(|mut g| g.take())
+        .map(|a| {
+            let mut p = a.parts;
+            p.sort();
+            p.join("|")
+        })
+        .unwrap_or_default();
+    parts
+}
+
+#[cfg(not(windows))]
+fn monitor_fingerprint() -> String {
+    String::new()
+}

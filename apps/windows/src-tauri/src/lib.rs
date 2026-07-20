@@ -2,6 +2,7 @@ mod foreground;
 mod layering;
 mod model;
 mod persist;
+mod placement;
 mod refresh;
 mod tray;
 
@@ -11,8 +12,10 @@ use tauri::{Manager, PhysicalPosition};
 use tauri_plugin_single_instance::init as single_instance_init;
 
 use crate::layering::{invalidate_hit_region, start_layer_watcher, sync_window_layer};
-use crate::model::WindowPosition;
-use crate::persist::{read_window_position, write_window_position};
+use crate::persist::{
+    append_diagnostic_log, install_panic_hook, read_window_position,
+};
+use crate::placement::{restore_saved_position, start_display_watcher};
 use crate::refresh::{
     apply_bridge_root, detect_workspace_root, get_font_size, get_layout_mode, get_provider_order,
     get_theme_mode, get_view_model, poll_auto_switch, refresh_now, run_refresh, save_window_position,
@@ -28,6 +31,9 @@ fn context_menu_is_open(app: &tauri::AppHandle) -> bool {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    install_panic_hook();
+    append_diagnostic_log("app starting");
+
     // Prevent WebView2 from filling rounded transparent pixels with white.
     #[cfg(windows)]
     {
@@ -62,6 +68,7 @@ pub fn run() {
 
             setup_tray(app.handle())?;
             start_layer_watcher(app.handle().clone());
+            start_display_watcher(app.handle().clone());
 
             // Context menu (right-click on the capsule) events.
             app.on_menu_event(|app, event| {
@@ -77,31 +84,29 @@ pub fn run() {
                 if let Some(pos) = read_window_position() {
                     let _ = win.set_position(PhysicalPosition::new(pos.x as i32, pos.y as i32));
                     // WebView init can reset placement; re-apply shortly after show.
-                    let win_restore = win.clone();
+                    let app_restore = app.handle().clone();
                     let restore_pos = pos.clone();
                     std::thread::spawn(move || {
                         std::thread::sleep(Duration::from_millis(400));
-                        let _ = win_restore.set_position(PhysicalPosition::new(
-                            restore_pos.x as i32,
-                            restore_pos.y as i32,
-                        ));
-                        sync_window_layer(&win_restore);
+                        let app_main = app_restore.clone();
+                        let _ = app_restore.run_on_main_thread(move || {
+                            if let Some(w) = app_main.get_webview_window("main") {
+                                let _ = w.set_position(PhysicalPosition::new(
+                                    restore_pos.x as i32,
+                                    restore_pos.y as i32,
+                                ));
+                                sync_window_layer(&w);
+                            }
+                        });
                     });
                 }
 
                 let app_handle = app.handle().clone();
                 win.on_window_event(move |event| {
-                    if let tauri::WindowEvent::Moved(position) = event {
-                        let suppress = app_handle
-                            .state::<AppState>()
-                            .suppress_position_save
-                            .load(std::sync::atomic::Ordering::SeqCst);
-                        if !suppress {
-                            let _ = write_window_position(&WindowPosition {
-                                x: position.x as f64,
-                                y: position.y as f64,
-                            });
-                        }
+                    // Do NOT persist every Moved event — display sleep/wake fires
+                    // spurious moves that would overwrite the user's preferred spot.
+                    // Position is saved only from user drag / expand-collapse (JS).
+                    if let tauri::WindowEvent::Moved(_) = event {
                         if let Some(w) = app_handle.get_webview_window("main") {
                             sync_window_layer(&w);
                         }
@@ -111,6 +116,9 @@ pub fn run() {
                         if let Some(w) = app_handle.get_webview_window("main") {
                             sync_window_layer(&w);
                         }
+                    }
+                    if let tauri::WindowEvent::ScaleFactorChanged { .. } = event {
+                        restore_saved_position(&app_handle, "dpi-change");
                     }
                     // Shell flyouts can knock the capsule out of band; re-sync
                     // when we lose focus (skip while the native menu is open).
@@ -142,29 +150,35 @@ pub fn run() {
             // Immediate refresh on launch
             let handle = app.handle().clone();
             std::thread::spawn(move || {
-                let _ = run_refresh(&handle);
+                let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                    let _ = run_refresh(&handle);
+                }));
             });
 
             // 60s refresh loop
             let handle = app.handle().clone();
             std::thread::spawn(move || loop {
                 std::thread::sleep(Duration::from_secs(60));
-                let _ = run_refresh(&handle);
+                if std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                    let _ = run_refresh(&handle);
+                }))
+                .is_err()
+                {
+                    append_diagnostic_log("refresh loop: caught panic, continuing");
+                }
             });
 
-            // 3s foreground poll so "auto" mode switches sources promptly;
-            // also keep Z-order correct relative to the tray.
+            // 3s foreground poll so "auto" mode switches sources promptly.
+            // Window Z-order is handled by start_layer_watcher (main-thread only).
             let handle = app.handle().clone();
             std::thread::spawn(move || loop {
                 std::thread::sleep(Duration::from_secs(3));
-                poll_auto_switch(&handle);
-                if context_menu_is_open(&handle) {
-                    continue;
-                }
-                if let Some(win) = handle.get_webview_window("main") {
-                    if win.is_visible().unwrap_or(false) {
-                        sync_window_layer(&win);
-                    }
+                if std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                    poll_auto_switch(&handle);
+                }))
+                .is_err()
+                {
+                    append_diagnostic_log("auto-switch poll: caught panic, continuing");
                 }
             });
 
