@@ -183,7 +183,7 @@ function unavailableJudgment(code?: DiagnosticCode | null): string {
     case "cli_missing":
       return "未找到对应客户端数据。Codex 请安装 CLI；Cursor 请确认本机已安装并打开过 Cursor。";
     case "auth_required":
-      return "未登录或登录已失效。请在 Codex（codex login）或 Cursor 内重新登录后点刷新。";
+      return "未登录或登录已失效。";
     case "timeout":
       return "读取超时，请稍后在托盘选择「立即刷新」，或检查网络。";
     case "stale":
