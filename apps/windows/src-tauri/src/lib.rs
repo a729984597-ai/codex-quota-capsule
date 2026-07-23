@@ -46,8 +46,10 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(single_instance_init(|app, _argv, _cwd| {
             if let Some(win) = app.get_webview_window("main") {
+                let _ = win.unminimize();
                 let _ = win.show();
                 let _ = win.set_focus();
+                crate::placement::restore_saved_position(app, "single-instance");
             }
         }))
         .manage(AppState::new(workspace_root))

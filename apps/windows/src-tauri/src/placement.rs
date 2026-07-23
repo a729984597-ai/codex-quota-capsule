@@ -1,9 +1,11 @@
 //! Persist user placement and restore it after display sleep/wake glitches.
 //!
 //! Windows often fires spurious `Moved` events (or relocates the HWND) when a
-//! monitor powers off/on. We only trust positions saved by explicit user drag /
-//! expand-collapse, and re-apply that preferred spot when the display topology
-//! changes.
+//! monitor powers off/on. Sometimes the window is parked at (-32000,-32000)
+//! (minimized/off-screen) while still reporting as "visible". We only trust
+//! positions saved by explicit user drag / expand-collapse, and re-apply that
+//! preferred spot when the display topology changes — or when we detect the
+//! HWND has been parked off-screen.
 
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Mutex;
@@ -21,6 +23,13 @@ pub fn restore_saved_position(app: &AppHandle, reason: &str) {
     let Some(pos) = read_window_position() else {
         return;
     };
+    if !is_plausible_position(pos.x, pos.y) {
+        append_diagnostic_log(&format!(
+            "placement skip bad saved pos ({:.0},{:.0})",
+            pos.x, pos.y
+        ));
+        return;
+    }
     if RESTORE_IN_FLIGHT.swap(true, Ordering::SeqCst) {
         return;
     }
@@ -49,6 +58,10 @@ fn apply_position(app: &AppHandle, pos: &crate::model::WindowPosition, reason: &
     app.state::<AppState>()
         .suppress_position_save
         .store(true, Ordering::SeqCst);
+    // Display sleep/wake can park the HWND at (-32000,-32000). Bring it back
+    // before applying coordinates, otherwise set_position is a no-op visually.
+    let _ = win.show();
+    let _ = win.unminimize();
     let _ = win.set_position(PhysicalPosition::new(pos.x as i32, pos.y as i32));
     crate::layering::sync_window_layer(&win);
     app.state::<AppState>()
@@ -60,7 +73,23 @@ fn apply_position(app: &AppHandle, pos: &crate::model::WindowPosition, reason: &
     ));
 }
 
+fn is_plausible_position(x: f64, y: f64) -> bool {
+    // Windows parks minimized/hidden windows around (-32000,-32000).
+    x > -10_000.0 && y > -10_000.0 && x < 50_000.0 && y < 50_000.0
+}
+
+fn window_is_parked_offscreen(app: &AppHandle) -> bool {
+    let Some(win) = app.get_webview_window("main") else {
+        return false;
+    };
+    match win.outer_position() {
+        Ok(pos) => !is_plausible_position(pos.x as f64, pos.y as f64),
+        Err(_) => false,
+    }
+}
+
 /// Watch for monitor layout changes (sleep/wake, cable reconnect) and restore.
+/// Also recover if the HWND was parked off-screen without a topology change.
 pub fn start_display_watcher(app: AppHandle) {
     std::thread::spawn(move || {
         let last = Mutex::new(monitor_fingerprint());
@@ -82,6 +111,12 @@ pub fn start_display_watcher(app: AppHandle) {
             if changed {
                 append_diagnostic_log("display topology changed");
                 restore_saved_position(&app, "display-change");
+                continue;
+            }
+            // Catch minimize/off-screen park that didn't change monitor list.
+            if !RESTORE_IN_FLIGHT.load(Ordering::SeqCst) && window_is_parked_offscreen(&app) {
+                append_diagnostic_log("window parked off-screen; restoring");
+                restore_saved_position(&app, "offscreen");
             }
         }
     });

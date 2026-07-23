@@ -350,8 +350,10 @@ pub fn setup_tray(app: &AppHandle) -> tauri::Result<()> {
         .on_menu_event(|app, event| match event.id.as_ref() {
             "show" => {
                 if let Some(win) = app.get_webview_window("main") {
+                    let _ = win.unminimize();
                     let _ = win.show();
                     let _ = win.set_focus();
+                    crate::placement::restore_saved_position(app, "tray-show");
                 }
             }
             "hide" => {
@@ -419,8 +421,10 @@ pub fn setup_tray(app: &AppHandle) -> tauri::Result<()> {
             {
                 let app = tray.app_handle();
                 if let Some(win) = app.get_webview_window("main") {
+                    let _ = win.unminimize();
                     let _ = win.show();
                     let _ = win.set_focus();
+                    crate::placement::restore_saved_position(app, "tray-click");
                 }
             }
         })
