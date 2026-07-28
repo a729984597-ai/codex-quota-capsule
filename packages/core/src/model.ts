@@ -38,9 +38,8 @@ export type AgentQuotaSnapshot = {
   diagnosticCode?: DiagnosticCode;
 };
 
-/** Product-facing six states (MVP). */
+/** Product-facing static quota states. */
 export type CapsuleState =
-  | "earlyEstimate"
   | "onTrack"
   | "runningFast"
   | "mayRunOut"

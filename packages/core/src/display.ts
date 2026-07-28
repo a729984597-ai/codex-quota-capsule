@@ -24,7 +24,6 @@ export type BuildViewModelInput = {
 };
 
 const STATUS: Record<CapsuleState, string> = {
-  earlyEstimate: "充足",
   onTrack: "充足",
   runningFast: "偏低",
   mayRunOut: "紧张",
@@ -33,7 +32,6 @@ const STATUS: Record<CapsuleState, string> = {
 };
 
 const TONE: Record<CapsuleState, CapsuleTone> = {
-  earlyEstimate: "safe",
   onTrack: "safe",
   runningFast: "watch",
   mayRunOut: "danger",
@@ -162,7 +160,6 @@ function pickWorse(a: ProviderSlice, b: ProviderSlice): ProviderSlice {
     exhausted: 5,
     mayRunOut: 4,
     runningFast: 3,
-    earlyEstimate: 2,
     onTrack: 1,
     dataUnavailable: 0,
   };
@@ -203,7 +200,6 @@ function judgmentFor(
       return unavailableJudgment(null);
     case "exhausted":
       return "本周期额度已用尽，重置后会自动恢复";
-    case "earlyEstimate":
     case "onTrack":
       return "剩余额度充足";
     case "runningFast":

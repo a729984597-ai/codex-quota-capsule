@@ -24,7 +24,7 @@ describe("buildCapsuleViewModel", () => {
     });
     expect(vm.state).toBe("onTrack");
     expect(vm.tone).toBe("safe");
-    expect(vm.statusLabel).toBe("够用");
+    expect(vm.statusLabel).toBe("充足");
     expect(vm.usedPercent).toBe(40);
     expect(vm.isStale).toBe(false);
     expect(vm.provider).toBe("codex");
