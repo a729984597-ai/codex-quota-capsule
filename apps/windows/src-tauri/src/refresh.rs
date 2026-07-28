@@ -26,7 +26,6 @@ use crate::persist::{
 const CREATE_NO_WINDOW: u32 = 0x0800_0000;
 
 const MAX_CONSECUTIVE_FAILURES: u32 = 5;
-const STALE_MAX_AGE: Duration = Duration::from_secs(30 * 60);
 /// Only reuse a provider snapshot for optimistic UI if fresher than this.
 const OPTIMISTIC_CACHE_MAX_AGE: Duration = Duration::from_secs(10 * 60);
 
@@ -662,7 +661,9 @@ fn refresh_inner(app: &AppHandle) -> Result<CapsuleViewModel, String> {
         provider_mode.clone()
     };
 
-    let live = spawn_refresh(&node, &script, &root, &effective_provider, None)?;
+    let cache_path = last_success_path();
+    let cached = cache_path.exists().then_some(cache_path.as_path());
+    let live = spawn_refresh(&node, &script, &root, &effective_provider, cached)?;
     if live.ok {
         let vm = live.view_model.clone();
         let _ = write_last_success(&LastSuccessFile {
@@ -674,64 +675,26 @@ fn refresh_inner(app: &AppHandle) -> Result<CapsuleViewModel, String> {
         return publish(app, &state, vm, true);
     }
 
-    // Failure path: try stale rebuild via bridge
-    let stale_path = last_success_path();
-    let stale_payload = if stale_path.exists() {
-        spawn_refresh(&node, &script, &root, &effective_provider, Some(&stale_path)).ok()
-    } else {
-        None
-    };
-
     let failures = {
-        let mut n = state.consecutive_failures.lock().map_err(|e| e.to_string())?;
-        *n += 1;
-        *n
-    };
-
-    let stale_too_old = {
-        let session_old = state
-            .last_success_at
+        let mut count = state
+            .consecutive_failures
             .lock()
-            .ok()
-            .and_then(|g| *g)
-            .map(|t| t.elapsed() > STALE_MAX_AGE);
-        let file_old = std::fs::metadata(last_success_path())
-            .and_then(|m| m.modified())
-            .ok()
-            .and_then(|t| t.elapsed().ok())
-            .map(|age| age > STALE_MAX_AGE);
-        session_old.or(file_old).unwrap_or(true)
+            .map_err(|e| e.to_string())?;
+        *count += 1;
+        *count
     };
 
-    let escalate = failures >= MAX_CONSECUTIVE_FAILURES || stale_too_old;
-
-    let vm = if escalate {
-        let mut unavailable = live.view_model;
-        unavailable.is_stale = false;
-        if unavailable.diagnostic_code.is_none() {
-            unavailable.diagnostic_code = live
-                .snapshot_meta
-                .as_ref()
-                .and_then(|m| m.diagnostic_code.clone());
-        }
-        unavailable.judgment_text = "额度数据长时间不可用，已停止使用旧数据判断".into();
-        unavailable
-    } else if let Some(stale) = stale_payload {
-        stale.view_model
-    } else if let Some(saved) = read_last_success() {
-        // Bridge stale path failed; keep last UI fields but mark unavailable
-        let mut vm = saved.view_model;
-        vm.state = "dataUnavailable".into();
-        vm.tone = "unknown".into();
-        vm.status_label = "数据暂不可用".into();
-        vm.is_stale = true;
-        vm.diagnostic_code = Some("stale".into());
-        vm.judgment_text =
-            "正在显示上次成功的周额度数据，恢复实时读取前暂不判断周速度。".into();
-        vm
+    let mut vm = if failures >= MAX_CONSECUTIVE_FAILURES && live.view_model.has_stale_data() {
+        spawn_refresh(&node, &script, &root, &effective_provider, None)
+            .map(|payload| payload.view_model)?
     } else {
         live.view_model
     };
+
+    if failures >= MAX_CONSECUTIVE_FAILURES {
+        vm.is_stale = false;
+        vm.judgment_text = "额度数据长时间不可用，已停止使用旧数据判断".into();
+    }
 
     publish(app, &state, vm, false)
 }

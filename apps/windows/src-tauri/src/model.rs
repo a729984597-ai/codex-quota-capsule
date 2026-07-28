@@ -133,6 +133,15 @@ impl CapsuleViewModel {
             self.reset_countdown_text
         )
     }
+
+    pub fn has_stale_data(&self) -> bool {
+        (self.is_stale && self.used_percent.is_some())
+            || self.providers.as_ref().is_some_and(|providers| {
+                providers
+                    .iter()
+                    .any(|provider| provider.is_stale && provider.used_percent.is_some())
+            })
+    }
 }
 
 fn format_used(used: Option<f64>, breakdown: Option<&UsageBreakdown>) -> String {
@@ -305,4 +314,74 @@ fn format_slice_status_line(slice: &ProviderSlice) -> String {
         used.round()
     };
     format!("{} {:.0}%", slice.status_label, pct)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{CapsuleViewModel, ProviderSlice};
+
+    fn view_model() -> CapsuleViewModel {
+        CapsuleViewModel {
+            provider: "codex".into(),
+            display_mode: "single".into(),
+            state: "dataUnavailable".into(),
+            tone: "unknown".into(),
+            status_label: "数据暂不可用".into(),
+            judgment_text: "读取失败".into(),
+            used_percent: None,
+            usage_breakdown: None,
+            reset_countdown_text: "重置未知".into(),
+            freshness_text: "尚未成功读取".into(),
+            is_stale: false,
+            diagnostic_code: Some("timeout".into()),
+            fetched_at_iso: None,
+            resets_at_iso: None,
+            providers: None,
+        }
+    }
+
+    fn stale_slice() -> ProviderSlice {
+        ProviderSlice {
+            provider: "codex".into(),
+            state: "dataUnavailable".into(),
+            tone: "unknown".into(),
+            status_label: "数据暂不可用".into(),
+            judgment_text: "正在显示缓存".into(),
+            used_percent: Some(25.0),
+            usage_breakdown: None,
+            reset_countdown_text: "2d".into(),
+            freshness_text: "上次成功：10 分钟前".into(),
+            is_stale: true,
+            diagnostic_code: Some("timeout".into()),
+            fetched_at_iso: Some("2026-07-28T05:50:00.000Z".into()),
+            resets_at_iso: None,
+        }
+    }
+
+    #[test]
+    fn detects_single_provider_stale_data() {
+        let mut vm = view_model();
+        vm.used_percent = Some(25.0);
+        vm.is_stale = true;
+
+        assert!(vm.has_stale_data());
+    }
+
+    #[test]
+    fn detects_stale_data_in_one_provider_slice() {
+        let mut vm = view_model();
+        vm.provider = "both".into();
+        vm.display_mode = "both".into();
+        vm.providers = Some(vec![stale_slice()]);
+
+        assert!(vm.has_stale_data());
+    }
+
+    #[test]
+    fn unavailable_without_cached_numbers_is_not_stale_data() {
+        let mut vm = view_model();
+        vm.is_stale = true;
+
+        assert!(!vm.has_stale_data());
+    }
 }
