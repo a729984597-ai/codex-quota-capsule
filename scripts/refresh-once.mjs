@@ -3,10 +3,10 @@ import { execFileSync } from "node:child_process";
 import { readFileSync, writeFileSync } from "node:fs";
 import { chdir } from "node:process";
 import {
-  buildCapsuleViewModel,
   buildProviderSlice,
   mergeDualViewModel,
   predictRunway,
+  selectProviderSlice,
 } from "../packages/core/dist/index.js";
 import { readCodexRateLimits } from "../packages/source-codex/dist/index.js";
 import { readCursorRateLimits } from "../packages/source-cursor/dist/index.js";
@@ -41,6 +41,7 @@ const outPath = outIdx >= 0 ? args[outIdx + 1] : undefined;
 const providerIdx = args.indexOf("--provider");
 const providerArg =
   providerIdx >= 0 ? (args[providerIdx + 1] ?? "auto") : "auto";
+const cachedPayload = readCachedPayload(staleFromPath);
 
 function writeResult(payload) {
   const text = JSON.stringify(payload);
@@ -49,6 +50,15 @@ function writeResult(payload) {
     return;
   }
   process.stdout.write(text);
+}
+
+function readCachedPayload(path) {
+  if (!path) return null;
+  try {
+    return JSON.parse(readFileSync(path, "utf8"));
+  } catch {
+    return null;
+  }
 }
 
 function isCursorRunning() {
@@ -67,51 +77,6 @@ function isCursorRunning() {
 function resolveProvider(pref) {
   if (pref === "codex" || pref === "cursor" || pref === "both") return pref;
   return isCursorRunning() ? "cursor" : "codex";
-}
-
-function snapshotToViewModel(snapshot, fetchedAt, provider) {
-  const breakdown = snapshot.usageBreakdown ?? null;
-  if (snapshot.sourceStatus === "ok" && snapshot.weeklyWindow) {
-    const forecast = predictRunway(snapshot, fetchedAt);
-    return {
-      ok: true,
-      viewModel: buildCapsuleViewModel({
-        forecast,
-        fetchedAt: snapshot.fetchedAt,
-        resetsAt: snapshot.weeklyWindow.resetsAt,
-        now: fetchedAt,
-        isStale: false,
-        diagnosticCode: snapshot.diagnosticCode ?? null,
-        provider,
-        displayMode: "single",
-        usageBreakdown: breakdown,
-      }),
-      snapshotMeta: {
-        sourceStatus: snapshot.sourceStatus,
-        diagnosticCode: snapshot.diagnosticCode ?? null,
-      },
-    };
-  }
-
-  const forecast = predictRunway(snapshot, fetchedAt);
-  return {
-    ok: false,
-    viewModel: buildCapsuleViewModel({
-      forecast,
-      fetchedAt: snapshot.fetchedAt,
-      resetsAt: snapshot.weeklyWindow?.resetsAt ?? null,
-      now: fetchedAt,
-      isStale: false,
-      diagnosticCode: snapshot.diagnosticCode ?? null,
-      provider,
-      displayMode: "single",
-      usageBreakdown: breakdown,
-    }),
-    snapshotMeta: {
-      sourceStatus: snapshot.sourceStatus,
-      diagnosticCode: snapshot.diagnosticCode ?? null,
-    },
-  };
 }
 
 function snapshotToSlice(snapshot, fetchedAt, provider) {
@@ -142,60 +107,34 @@ function snapshotToSlice(snapshot, fetchedAt, provider) {
   });
 }
 
-function tryStale(provider, fetchedAt, diagnosticCode) {
-  if (!staleFromPath) return null;
-  try {
-    const raw = JSON.parse(readFileSync(staleFromPath, "utf8"));
-    const vm = raw.viewModel ?? raw;
-    // Never show another provider's cached numbers under this provider's label.
-    let usedPercent = null;
-    let fetchedAtIso = null;
-    let resetsAtIso = null;
-    if (Array.isArray(vm.providers)) {
-      const slice = vm.providers.find((p) => p.provider === provider);
-      if (slice) {
-        usedPercent =
-          typeof slice.usedPercent === "number" ? slice.usedPercent : null;
-        fetchedAtIso = slice.fetchedAtIso ?? null;
-        resetsAtIso = slice.resetsAtIso ?? null;
-      }
-    }
-    if (usedPercent === null && vm.provider === provider) {
-      usedPercent =
-        typeof raw.usedPercent === "number"
-          ? raw.usedPercent
-          : typeof vm.usedPercent === "number"
-            ? vm.usedPercent
-            : null;
-      fetchedAtIso = raw.fetchedAtIso ?? vm.fetchedAtIso ?? null;
-      resetsAtIso = raw.resetsAtIso ?? vm.resetsAtIso ?? null;
-    }
-    if (usedPercent === null) return null;
-    const forecast = {
-      state: "dataUnavailable",
-      usedPercent,
-      remainingPercent:
-        usedPercent === null ? null : Math.max(0, 100 - usedPercent),
-      elapsedPercent: null,
-      hoursUntilReset: null,
-      projectedRemainingAtReset: null,
-      sustainableRatePerHour: null,
-      cycleRatePerHour: null,
-      confidenceReason: "stale",
-    };
-    return buildCapsuleViewModel({
-      forecast,
-      fetchedAt: fetchedAtIso ? new Date(fetchedAtIso) : null,
-      resetsAt: resetsAtIso ? new Date(resetsAtIso) : null,
-      now: fetchedAt,
-      isStale: true,
-      diagnosticCode: diagnosticCode ?? "stale",
-      provider,
-      displayMode: "single",
-    });
-  } catch {
-    return null;
-  }
+function snapshotToSelectedSlice(snapshot, fetchedAt, provider, cached) {
+  const current = snapshotToSlice(snapshot, fetchedAt, provider);
+  return selectProviderSlice({
+    current,
+    live: snapshot.sourceStatus === "ok" && Boolean(snapshot.weeklyWindow),
+    cached,
+    now: fetchedAt,
+    diagnosticCode: snapshot.diagnosticCode ?? null,
+  });
+}
+
+function sliceToViewModel(slice) {
+  return {
+    provider: slice.provider,
+    displayMode: "single",
+    state: slice.state,
+    tone: slice.tone,
+    statusLabel: slice.statusLabel,
+    judgmentText: slice.judgmentText,
+    usedPercent: slice.usedPercent,
+    usageBreakdown: slice.usageBreakdown ?? null,
+    resetCountdownText: slice.resetCountdownText,
+    freshnessText: slice.freshnessText,
+    isStale: slice.isStale,
+    diagnosticCode: slice.diagnosticCode,
+    fetchedAtIso: slice.fetchedAtIso,
+    resetsAtIso: slice.resetsAtIso,
+  };
 }
 
 try {
@@ -207,11 +146,20 @@ try {
       readCursorRateLimits({ fetchedAt, timeoutMs: 30_000 }),
       readCodexRateLimits({ fetchedAt, timeoutMs: 30_000 }),
     ]);
-    const cursorSlice = snapshotToSlice(cursorSnap, fetchedAt, "cursor");
-    const codexSlice = snapshotToSlice(codexSnap, fetchedAt, "codex");
-    const viewModel = mergeDualViewModel(cursorSlice, codexSlice);
-    const ok =
-      cursorSnap.sourceStatus === "ok" || codexSnap.sourceStatus === "ok";
+    const cursor = snapshotToSelectedSlice(
+      cursorSnap,
+      fetchedAt,
+      "cursor",
+      cachedPayload,
+    );
+    const codex = snapshotToSelectedSlice(
+      codexSnap,
+      fetchedAt,
+      "codex",
+      cachedPayload,
+    );
+    const viewModel = mergeDualViewModel(cursor.slice, codex.slice);
+    const ok = cursor.live || codex.live;
     writeResult({
       ok,
       viewModel,
@@ -222,7 +170,7 @@ try {
           : (cursorSnap.diagnosticCode ?? codexSnap.diagnosticCode ?? null),
       },
     });
-    process.exit(ok ? 0 : 0);
+    process.exit(0);
   }
 
   const snapshot =
@@ -230,26 +178,20 @@ try {
       ? await readCursorRateLimits({ fetchedAt, timeoutMs: 30_000 })
       : await readCodexRateLimits({ fetchedAt, timeoutMs: 30_000 });
 
-  const live = snapshotToViewModel(snapshot, fetchedAt, selected);
-  if (live.ok) {
-    writeResult(live);
-    process.exit(0);
-  }
-
-  const staleVm = tryStale(selected, fetchedAt, snapshot.diagnosticCode);
-  if (staleVm) {
-    writeResult({
-      ok: false,
-      viewModel: staleVm,
-      snapshotMeta: {
-        sourceStatus: "error",
-        diagnosticCode: staleVm.diagnosticCode,
-      },
-    });
-    process.exit(0);
-  }
-
-  writeResult(live);
+  const selectedSlice = snapshotToSelectedSlice(
+    snapshot,
+    fetchedAt,
+    selected,
+    cachedPayload,
+  );
+  writeResult({
+    ok: selectedSlice.live,
+    viewModel: sliceToViewModel(selectedSlice.slice),
+    snapshotMeta: {
+      sourceStatus: snapshot.sourceStatus,
+      diagnosticCode: snapshot.diagnosticCode ?? null,
+    },
+  });
 } catch (error) {
   const message = error instanceof Error ? error.message : String(error);
   writeResult({

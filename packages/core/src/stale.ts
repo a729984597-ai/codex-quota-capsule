@@ -57,6 +57,25 @@ export function restoreCachedProviderSlice(input: {
   };
 }
 
+export function selectProviderSlice(input: {
+  current: ProviderSlice;
+  live: boolean;
+  cached: unknown;
+  now: Date;
+  diagnosticCode?: DiagnosticCode | null;
+}): { live: boolean; slice: ProviderSlice } {
+  if (input.live) {
+    return { live: true, slice: input.current };
+  }
+  const stale = restoreCachedProviderSlice({
+    cached: input.cached,
+    provider: input.current.provider,
+    now: input.now,
+    diagnosticCode: input.diagnosticCode,
+  });
+  return { live: false, slice: stale ?? input.current };
+}
+
 function readObject(value: unknown): Record<string, unknown> {
   return value && typeof value === "object" && !Array.isArray(value)
     ? (value as Record<string, unknown>)

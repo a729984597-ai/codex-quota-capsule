@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { restoreCachedProviderSlice } from "../src/stale.ts";
+import { mergeDualViewModel } from "../src/display.ts";
+import {
+  restoreCachedProviderSlice,
+  selectProviderSlice,
+} from "../src/stale.ts";
+import type { ProviderId, ProviderSlice } from "../src/model.ts";
 
 const NOW = new Date("2026-07-28T06:00:00.000Z");
 
@@ -7,7 +12,7 @@ function cachedSlice(
   provider: "cursor" | "codex",
   fetchedAtIso: string,
   usedPercent = provider === "cursor" ? 40 : 25,
-) {
+): ProviderSlice {
   return {
     provider,
     state: "onTrack",
@@ -25,6 +30,20 @@ function cachedSlice(
     diagnosticCode: null,
     fetchedAtIso,
     resetsAtIso: "2026-07-30T06:00:00.000Z",
+  };
+}
+
+function unavailableSlice(provider: ProviderId): ProviderSlice {
+  return {
+    ...cachedSlice(provider, NOW.toISOString()),
+    state: "dataUnavailable",
+    tone: "unknown",
+    statusLabel: "数据暂不可用",
+    judgmentText: "读取失败",
+    usedPercent: null,
+    usageBreakdown: null,
+    isStale: false,
+    diagnosticCode: "timeout",
   };
 }
 
@@ -150,5 +169,103 @@ describe("restoreCachedProviderSlice", () => {
     });
 
     expect(result).toBeNull();
+  });
+});
+
+describe("selectProviderSlice", () => {
+  const dualCache = {
+    viewModel: {
+      provider: "both",
+      providers: [
+        cachedSlice("cursor", "2026-07-28T05:40:00.000Z"),
+        cachedSlice("codex", "2026-07-28T05:45:00.000Z"),
+      ],
+    },
+  };
+
+  it("keeps Cursor live while restoring cached Codex", () => {
+    const cursorLive = cachedSlice("cursor", NOW.toISOString());
+    const cursor = selectProviderSlice({
+      current: cursorLive,
+      live: true,
+      cached: dualCache,
+      now: NOW,
+    });
+    const codex = selectProviderSlice({
+      current: unavailableSlice("codex"),
+      live: false,
+      cached: dualCache,
+      now: NOW,
+      diagnosticCode: "timeout",
+    });
+
+    expect(cursor).toEqual({ live: true, slice: cursorLive });
+    expect(codex.live).toBe(false);
+    expect(codex.slice).toMatchObject({
+      provider: "codex",
+      usedPercent: 25,
+      isStale: true,
+      diagnosticCode: "timeout",
+    });
+
+    const merged = mergeDualViewModel(cursor.slice, codex.slice);
+    expect(merged.providers).toEqual([cursor.slice, codex.slice]);
+    expect(merged.isStale).toBe(false);
+  });
+
+  it("keeps Codex live while restoring cached Cursor", () => {
+    const cursor = selectProviderSlice({
+      current: unavailableSlice("cursor"),
+      live: false,
+      cached: dualCache,
+      now: NOW,
+      diagnosticCode: "auth_required",
+    });
+    const codexLive = cachedSlice("codex", NOW.toISOString());
+    const codex = selectProviderSlice({
+      current: codexLive,
+      live: true,
+      cached: dualCache,
+      now: NOW,
+    });
+
+    expect(cursor.slice).toMatchObject({
+      provider: "cursor",
+      usedPercent: 40,
+      isStale: true,
+      diagnosticCode: "auth_required",
+    });
+    expect(codex).toEqual({ live: true, slice: codexLive });
+  });
+
+  it("restores both provider slices when both live reads fail", () => {
+    const cursor = selectProviderSlice({
+      current: unavailableSlice("cursor"),
+      live: false,
+      cached: dualCache,
+      now: NOW,
+    });
+    const codex = selectProviderSlice({
+      current: unavailableSlice("codex"),
+      live: false,
+      cached: dualCache,
+      now: NOW,
+    });
+
+    expect(cursor.slice.isStale).toBe(true);
+    expect(codex.slice.isStale).toBe(true);
+    expect(mergeDualViewModel(cursor.slice, codex.slice).isStale).toBe(true);
+  });
+
+  it("keeps the unavailable slice when no usable cache exists", () => {
+    const current = unavailableSlice("codex");
+    const selected = selectProviderSlice({
+      current,
+      live: false,
+      cached: null,
+      now: NOW,
+    });
+
+    expect(selected).toEqual({ live: false, slice: current });
   });
 });
