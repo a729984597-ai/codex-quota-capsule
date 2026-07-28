@@ -195,30 +195,22 @@ function unavailableJudgment(code?: DiagnosticCode | null): string {
 
 function judgmentFor(
   f: RunwayForecast,
-  breakdown?: UsageBreakdown | null,
+  _breakdown?: UsageBreakdown | null,
 ): string {
-  const split =
-    breakdown &&
-    (breakdown.autoPercent !== null || breakdown.apiPercent !== null)
-      ? `（Auto ${fmtPct(breakdown.autoPercent)} · API ${fmtPct(breakdown.apiPercent)}）`
-      : "";
+  // Auto/API percents are shown in the usage bars; don't repeat them here.
   switch (f.state) {
     case "dataUnavailable":
       return unavailableJudgment(null);
     case "exhausted":
-      return `本周期额度已用尽，重置后会自动恢复${split}`;
+      return "本周期额度已用尽，重置后会自动恢复";
     case "earlyEstimate":
     case "onTrack":
-      return `剩余额度充足${split}`;
+      return "剩余额度充足";
     case "runningFast":
-      return `剩余额度不足 30%，注意用量${split}`;
+      return "剩余额度不足 30%，注意用量";
     case "mayRunOut":
-      return `剩余额度不足 10%，即将用尽${split}`;
+      return "剩余额度不足 10%，即将用尽";
   }
-}
-
-function fmtPct(value: number | null): string {
-  return value === null ? "—" : `${Math.round(value)}%`;
 }
 
 function formatCountdown(resetsAt: Date | null, now: Date): string {

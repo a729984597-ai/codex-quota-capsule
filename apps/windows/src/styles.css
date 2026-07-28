@@ -148,9 +148,9 @@ body:not(.is-expanded) .capsule {
 .usage-line {
   display: grid;
   /* Fixed label column so Auto/API (and 剩余) bars share the same track length */
-  grid-template-columns: 2.75rem minmax(0, 1fr) 2.75em;
+  grid-template-columns: 2.5rem minmax(8rem, 1fr) 2.75em;
   align-items: center;
-  gap: 8px;
+  gap: 10px;
   width: 100%;
   max-width: 100%;
   box-sizing: border-box;
@@ -168,7 +168,7 @@ body:not(.is-expanded) .capsule {
 }
 
 .usage-bar {
-  height: 5px;
+  height: 6px;
   border-radius: 999px;
   background: var(--bar-track);
   overflow: hidden;
@@ -222,7 +222,9 @@ body:not(.is-expanded) .capsule {
 
 .capsule.expanded.dual {
   gap: 0;
-  padding: 10px 12px 10px;
+  padding: 12px 14px 10px;
+  min-width: 220px;
+  box-sizing: border-box;
 }
 
 .capsule.minimal {

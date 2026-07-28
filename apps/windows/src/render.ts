@@ -364,15 +364,14 @@ export function capsuleHeights(
     return { width: 140, height: 28 };
   }
   if (model.displayMode === "both") {
-    // Fallback heights; fitWindow measures real content when expanded.
-    // Slightly wider when expanded so usage bars read ~60% of the row.
-    return { width: expanded ? 360 : 380, height: expanded ? (hasCursorSplit ? 210 : 185) : 52 };
+    // Fixed expanded width so short judgment text doesn't shrink the bars.
+    return { width: expanded ? 220 : 380, height: expanded ? (hasCursorSplit ? 210 : 185) : 52 };
   }
   if (hasCursorSplit) {
-    return { width: expanded ? 380 : 340, height: expanded ? 150 : 36 };
+    return { width: expanded ? 220 : 340, height: expanded ? 150 : 36 };
   }
   // Single provider with one usage bar (e.g. codex).
-  return { width: expanded ? 340 : 300, height: expanded ? 135 : 36 };
+  return { width: expanded ? 220 : 300, height: expanded ? 135 : 36 };
 }
 
 function shortUnavailableHint(code: string | null): string {

@@ -105,9 +105,12 @@ async function fitWindow(mode: FitMode = "resize"): Promise<void> {
     const prevBodyHeight = document.body.style.height;
     document.body.style.height = "auto";
     root.style.height = "auto";
-    // Always measure intrinsic width — expanded dual + usage bars need it,
-    // otherwise a fixed window width clips bars/text past the rounded edge.
-    root.style.width = "max-content";
+    if (expanded) {
+      // Keep a stable expanded width — max-content shrinks after short copy.
+      root.style.width = `${width}px`;
+    } else {
+      root.style.width = "max-content";
+    }
     await new Promise<void>((resolve) => {
       requestAnimationFrame(() => resolve());
     });
@@ -117,11 +120,11 @@ async function fitWindow(mode: FitMode = "resize"): Promise<void> {
     document.body.style.height = prevBodyHeight;
     // Keep the HWND flush to the visible capsule — extra padding steals tray clicks.
     const safety = 0;
-    measuredW = Math.ceil(rect.width) + safety;
+    measuredW = expanded ? scaledW : Math.ceil(rect.width) + safety;
     measuredH = Math.ceil(rect.height) + safety;
   }
 
-  const nextW = Math.max(scaledW, measuredW);
+  const nextW = expanded ? scaledW : Math.max(scaledW, measuredW);
   const nextH = Math.max(1, measuredH);
   const nextWPhys = Math.round(nextW * scale);
   const nextHPhys = Math.round(nextH * scale);
@@ -148,17 +151,34 @@ async function fitWindow(mode: FitMode = "resize"): Promise<void> {
 
     if (mode === "expand" && collapsedFrame) {
       const anchorBottom = collapsedFrame.y + collapsedFrame.height;
+      const anchorRight = collapsedFrame.x + collapsedFrame.width;
       const anchorCenterY = collapsedFrame.y + collapsedFrame.height / 2;
+      const monLeft = monitor.position.x;
+      const monRight = monitor.position.x + monitor.size.width;
+      const monMidX = monLeft + monitor.size.width / 2;
+      const anchorCenterX = collapsedFrame.x + collapsedFrame.width / 2;
       const growUp =
         anchorCenterY >= waMidY || collapsedFrame.y + nextHPhys > waBottom;
-      nextX = collapsedFrame.x;
+      // Near the tray (right half): grow left so a wider panel stays on-screen.
+      const growLeft =
+        anchorCenterX >= monMidX || collapsedFrame.x + nextWPhys > monRight;
+      nextX = growLeft ? anchorRight - nextWPhys : collapsedFrame.x;
       nextY = growUp ? anchorBottom - nextHPhys : collapsedFrame.y;
     } else {
-      // Refresh / font / layout while staying expanded: keep bottom when low.
+      // Refresh / font / layout while staying expanded: keep bottom when low,
+      // keep right edge when sitting on the right half of the monitor.
       const prevBottom = prevPos.y + prevSize.height;
+      const prevRight = prevPos.x + prevSize.width;
       const prevCenterY = prevPos.y + prevSize.height / 2;
+      const prevCenterX = prevPos.x + prevSize.width / 2;
+      const monLeft = monitor.position.x;
+      const monRight = monitor.position.x + monitor.size.width;
+      const monMidX = monLeft + monitor.size.width / 2;
       const growUp =
         prevCenterY >= waMidY || prevPos.y + nextHPhys > waBottom;
+      const growLeft =
+        prevCenterX >= monMidX || prevPos.x + nextWPhys > monRight;
+      nextX = growLeft ? prevRight - nextWPhys : prevPos.x;
       nextY = growUp ? prevBottom - nextHPhys : prevPos.y;
     }
 
