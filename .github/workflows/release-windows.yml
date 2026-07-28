@@ -28,6 +28,15 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Test TypeScript behavior
+        run: npm test
+
+      - name: Type-check TypeScript tests
+        run: npm run test:types
+
+      - name: Test Rust host
+        run: cargo test --manifest-path apps/windows/src-tauri/Cargo.toml
+
       - name: Build portable app
         run: npm run win:build
 

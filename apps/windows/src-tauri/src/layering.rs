@@ -73,7 +73,7 @@ pub fn start_layer_watcher(app: AppHandle) {
             }
             request_sync_window_layer(&app);
         }));
-        if let Err(_) = result {
+        if result.is_err() {
             append_diagnostic_log("layer watcher: caught panic, continuing");
         }
     });

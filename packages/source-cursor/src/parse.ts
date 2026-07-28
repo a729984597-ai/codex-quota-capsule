@@ -11,7 +11,7 @@ export type CursorUsageParseOptions = {
 
 /**
  * Map DashboardService GetCurrentPeriodUsage JSON into AgentQuotaSnapshot.
- * Keeps Auto+Composer / API / Total split; runway uses the worse of Auto vs API.
+ * Keeps Auto+Composer / API / Total split; quota state uses the hotter pool.
  */
 export function parseCursorPeriodUsage(
   raw: unknown,
