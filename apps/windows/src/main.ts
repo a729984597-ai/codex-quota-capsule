@@ -9,7 +9,7 @@ import {
   type CapsuleViewModel,
   type LayoutMode,
 } from "./render";
-import { clampFrameToWorkArea } from "./placement";
+import { clampFrameToMonitor } from "./placement";
 import { createSerialExecutor } from "./serial";
 import { fittedWindowWidth } from "./sizing";
 
@@ -27,7 +27,6 @@ const FONT_SCALES: Record<string, number> = {
 };
 
 const DRAG_THRESHOLD_PX = 4;
-const WORK_AREA_MARGIN_CSS_PX = 8;
 
 /** Collapsed outer frame (physical px), saved on expand so collapse can restore exactly. */
 let collapsedFrame: {
@@ -198,16 +197,17 @@ async function fitWindowNow(mode: FitMode): Promise<void> {
       nextY = growUp ? prevBottom - nextHPhys : prevPos.y;
     }
 
-    const margin = Math.round(WORK_AREA_MARGIN_CSS_PX * scale);
-    const clamped = clampFrameToWorkArea(
+    // Keep taskbar placement valid: clamp only to the physical monitor, not
+    // the work area (which excludes the taskbar).
+    const clamped = clampFrameToMonitor(
       { x: nextX, y: nextY, width: nextWPhys, height: nextHPhys },
       {
-        x: wa.position.x,
-        y: wa.position.y,
-        width: wa.size.width,
-        height: wa.size.height,
+        x: monitor.position.x,
+        y: monitor.position.y,
+        width: monitor.size.width,
+        height: monitor.size.height,
       },
-      margin,
+      0,
     );
     nextX = clamped.x;
     nextY = clamped.y;
@@ -327,19 +327,17 @@ function bindDragAndToggle(root: HTMLElement): void {
         const pos = await win.outerPosition();
         const size = await win.outerSize();
         const monitor = await currentMonitor();
-        const scale = await win.scaleFactor();
         let next = { x: pos.x, y: pos.y };
         if (monitor) {
-          const wa = monitor.workArea;
-          next = clampFrameToWorkArea(
+          next = clampFrameToMonitor(
             { x: pos.x, y: pos.y, width: size.width, height: size.height },
             {
-              x: wa.position.x,
-              y: wa.position.y,
-              width: wa.size.width,
-              height: wa.size.height,
+              x: monitor.position.x,
+              y: monitor.position.y,
+              width: monitor.size.width,
+              height: monitor.size.height,
             },
-            Math.round(WORK_AREA_MARGIN_CSS_PX * scale),
+            0,
           );
         }
         if (next.x !== pos.x || next.y !== pos.y) {

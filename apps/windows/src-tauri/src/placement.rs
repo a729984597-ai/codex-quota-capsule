@@ -65,20 +65,21 @@ fn apply_position(app: &AppHandle, pos: &crate::model::WindowPosition, reason: &
     let mut x = pos.x as i32;
     let mut y = pos.y as i32;
     if let (Ok(Some(monitor)), Ok(size)) = (win.current_monitor(), win.outer_size()) {
-        let work = monitor.work_area();
-        let margin = (8.0 * monitor.scale_factor()).round() as i32;
-        x = clamp_axis_to_work_area(
+        // The taskbar is outside the work area but is a valid user placement.
+        // Clamp only to the full monitor bounds.
+        let margin = 0;
+        x = clamp_axis_to_monitor(
             x,
             i32::try_from(size.width).unwrap_or(i32::MAX),
-            work.position.x,
-            i32::try_from(work.size.width).unwrap_or(i32::MAX),
+            monitor.position().x,
+            i32::try_from(monitor.size().width).unwrap_or(i32::MAX),
             margin,
         );
-        y = clamp_axis_to_work_area(
+        y = clamp_axis_to_monitor(
             y,
             i32::try_from(size.height).unwrap_or(i32::MAX),
-            work.position.y,
-            i32::try_from(work.size.height).unwrap_or(i32::MAX),
+            monitor.position().y,
+            i32::try_from(monitor.size().height).unwrap_or(i32::MAX),
             margin,
         );
     }
@@ -90,7 +91,7 @@ fn apply_position(app: &AppHandle, pos: &crate::model::WindowPosition, reason: &
     append_diagnostic_log(&format!("placement restore ({reason}) -> ({x},{y})"));
 }
 
-fn clamp_axis_to_work_area(
+fn clamp_axis_to_monitor(
     position: i32,
     window_size: i32,
     work_start: i32,
@@ -212,20 +213,20 @@ fn monitor_fingerprint() -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::clamp_axis_to_work_area;
+    use super::clamp_axis_to_monitor;
 
     #[test]
-    fn moves_a_saved_position_above_the_taskbar() {
-        assert_eq!(clamp_axis_to_work_area(1040, 37, 0, 1040, 8), 995);
+    fn keeps_a_saved_position_inside_the_taskbar() {
+        assert_eq!(clamp_axis_to_monitor(1040, 37, 0, 1080, 0), 1040);
     }
 
     #[test]
     fn keeps_a_saved_position_inside_the_work_area() {
-        assert_eq!(clamp_axis_to_work_area(900, 37, 0, 1040, 8), 900);
+        assert_eq!(clamp_axis_to_monitor(900, 37, 0, 1080, 0), 900);
     }
 
     #[test]
     fn supports_negative_monitor_coordinates() {
-        assert_eq!(clamp_axis_to_work_area(-2000, 348, -1920, 1920, 8), -1912);
+        assert_eq!(clamp_axis_to_monitor(-2000, 348, -1920, 1920, 0), -1920);
     }
 }

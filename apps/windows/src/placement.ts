@@ -12,9 +12,9 @@ export type WorkArea = {
   height: number;
 };
 
-export function clampFrameToWorkArea(
+export function clampFrameToMonitor(
   frame: Frame,
-  workArea: WorkArea,
+  monitor: WorkArea,
   margin: number,
 ): { x: number; y: number } {
   const inset = Math.max(0, margin);
@@ -22,15 +22,15 @@ export function clampFrameToWorkArea(
     x: clampAxis(
       frame.x,
       frame.width,
-      workArea.x,
-      workArea.width,
+      monitor.x,
+      monitor.width,
       inset,
     ),
     y: clampAxis(
       frame.y,
       frame.height,
-      workArea.y,
-      workArea.height,
+      monitor.y,
+      monitor.height,
       inset,
     ),
   };
