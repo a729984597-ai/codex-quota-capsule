@@ -11,6 +11,7 @@ import {
 } from "./render";
 import { clampFrameToWorkArea } from "./placement";
 import { createSerialExecutor } from "./serial";
+import { fittedWindowWidth } from "./sizing";
 
 let expanded = false;
 let model: CapsuleViewModel = placeholderModel();
@@ -138,7 +139,12 @@ async function fitWindowNow(mode: FitMode): Promise<void> {
     }
   }
 
-  const nextW = expanded ? scaledW : Math.max(scaledW, measuredW);
+  const nextW = fittedWindowWidth({
+    expanded,
+    layoutMode,
+    fallbackWidth: scaledW,
+    measuredWidth: measuredW,
+  });
   const nextH = Math.max(1, measuredH);
   const nextWPhys = Math.round(nextW * scale);
   const nextHPhys = Math.round(nextH * scale);
