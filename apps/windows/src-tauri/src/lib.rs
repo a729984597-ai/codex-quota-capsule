@@ -8,13 +8,11 @@ mod tray;
 
 use std::time::Duration;
 
-use tauri::{Manager, PhysicalPosition};
+use tauri::Manager;
 use tauri_plugin_single_instance::init as single_instance_init;
 
 use crate::layering::{invalidate_hit_region, start_layer_watcher, sync_window_layer};
-use crate::persist::{
-    append_diagnostic_log, install_panic_hook, read_window_position,
-};
+use crate::persist::{append_diagnostic_log, install_panic_hook};
 use crate::placement::{restore_saved_position, start_display_watcher};
 use crate::refresh::{
     apply_bridge_root, detect_workspace_root, get_font_size, get_layout_mode, get_provider_order,
@@ -83,25 +81,9 @@ pub fn run() {
                 let _ = win.set_ignore_cursor_events(false);
                 sync_window_layer(&win);
 
-                if let Some(pos) = read_window_position() {
-                    let _ = win.set_position(PhysicalPosition::new(pos.x as i32, pos.y as i32));
-                    // WebView init can reset placement; re-apply shortly after show.
-                    let app_restore = app.handle().clone();
-                    let restore_pos = pos.clone();
-                    std::thread::spawn(move || {
-                        std::thread::sleep(Duration::from_millis(400));
-                        let app_main = app_restore.clone();
-                        let _ = app_restore.run_on_main_thread(move || {
-                            if let Some(w) = app_main.get_webview_window("main") {
-                                let _ = w.set_position(PhysicalPosition::new(
-                                    restore_pos.x as i32,
-                                    restore_pos.y as i32,
-                                ));
-                                sync_window_layer(&w);
-                            }
-                        });
-                    });
-                }
+                // Use the same work-area-aware restore path as display wakeups.
+                // A raw delayed set_position here used to overwrite the frontend clamp.
+                restore_saved_position(app.handle(), "startup");
 
                 let app_handle = app.handle().clone();
                 win.on_window_event(move |event| {

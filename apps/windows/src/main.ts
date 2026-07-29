@@ -9,6 +9,8 @@ import {
   type CapsuleViewModel,
   type LayoutMode,
 } from "./render";
+import { clampFrameToWorkArea } from "./placement";
+import { createSerialExecutor } from "./serial";
 
 let expanded = false;
 let model: CapsuleViewModel = placeholderModel();
@@ -24,6 +26,7 @@ const FONT_SCALES: Record<string, number> = {
 };
 
 const DRAG_THRESHOLD_PX = 4;
+const WORK_AREA_MARGIN_CSS_PX = 8;
 
 /** Collapsed outer frame (physical px), saved on expand so collapse can restore exactly. */
 let collapsedFrame: {
@@ -54,6 +57,7 @@ function applyTheme(mode: string): void {
 }
 
 type FitMode = "expand" | "collapse" | "resize";
+const runWindowFitSerially = createSerialExecutor();
 
 async function persistCollapsedPosition(x: number, y: number): Promise<void> {
   try {
@@ -80,7 +84,11 @@ async function withSuppressedPositionSave<T>(fn: () => Promise<T>): Promise<T> {
   }
 }
 
-async function fitWindow(mode: FitMode = "resize"): Promise<void> {
+function fitWindow(mode: FitMode = "resize"): Promise<void> {
+  return runWindowFitSerially(() => fitWindowNow(mode));
+}
+
+async function fitWindowNow(mode: FitMode): Promise<void> {
   const { width, height } = capsuleHeights(model, expanded, layoutMode);
   const win = getCurrentWindow();
   const scaledW = Math.round(width * fontScale);
@@ -103,37 +111,37 @@ async function fitWindow(mode: FitMode = "resize"): Promise<void> {
     const prevWidth = root.style.width;
     const prevHeight = root.style.height;
     const prevBodyHeight = document.body.style.height;
-    document.body.style.height = "auto";
-    root.style.height = "auto";
-    if (expanded) {
-      // Keep a stable expanded width — max-content shrinks after short copy.
-      root.style.width = `${width}px`;
-    } else {
-      root.style.width = "max-content";
+    let rect: DOMRect | null = null;
+    try {
+      document.body.style.height = "auto";
+      root.style.height = "auto";
+      if (expanded) {
+        // Keep a stable expanded width — max-content shrinks after short copy.
+        root.style.width = `${width}px`;
+      } else {
+        root.style.width = "max-content";
+      }
+      await new Promise<void>((resolve) => {
+        requestAnimationFrame(() => resolve());
+      });
+      rect = root.getBoundingClientRect();
+    } finally {
+      root.style.width = prevWidth;
+      root.style.height = prevHeight;
+      document.body.style.height = prevBodyHeight;
     }
-    await new Promise<void>((resolve) => {
-      requestAnimationFrame(() => resolve());
-    });
-    const rect = root.getBoundingClientRect();
-    root.style.width = prevWidth;
-    root.style.height = prevHeight;
-    document.body.style.height = prevBodyHeight;
     // Keep the HWND flush to the visible capsule — extra padding steals tray clicks.
     const safety = 0;
-    measuredW = expanded ? scaledW : Math.ceil(rect.width) + safety;
-    measuredH = Math.ceil(rect.height) + safety;
+    if (rect) {
+      measuredW = expanded ? scaledW : Math.ceil(rect.width) + safety;
+      measuredH = Math.ceil(rect.height) + safety;
+    }
   }
 
   const nextW = expanded ? scaledW : Math.max(scaledW, measuredW);
   const nextH = Math.max(1, measuredH);
   const nextWPhys = Math.round(nextW * scale);
   const nextHPhys = Math.round(nextH * scale);
-
-  // Collapsed refresh/startup: only resize — never nudge X/Y.
-  if (mode === "resize" && !expanded) {
-    await win.setSize(new LogicalSize(nextW, nextH));
-    return;
-  }
 
   let nextX = prevPos.x;
   let nextY = prevPos.y;
@@ -149,7 +157,9 @@ async function fitWindow(mode: FitMode = "resize"): Promise<void> {
     const waBottom = wa.position.y + wa.size.height;
     const waMidY = waTop + wa.size.height / 2;
 
-    if (mode === "expand" && collapsedFrame) {
+    if (mode === "resize" && !expanded) {
+      // Keep the user's anchor unless it enters the taskbar / reserved work area.
+    } else if (mode === "expand" && collapsedFrame) {
       const anchorBottom = collapsedFrame.y + collapsedFrame.height;
       const anchorRight = collapsedFrame.x + collapsedFrame.width;
       const anchorCenterY = collapsedFrame.y + collapsedFrame.height / 2;
@@ -182,28 +192,31 @@ async function fitWindow(mode: FitMode = "resize"): Promise<void> {
       nextY = growUp ? prevBottom - nextHPhys : prevPos.y;
     }
 
-    // Only keep the window on the full monitor (taskbar allowed); never force
-    // it back into the work area.
-    const monLeft = monitor.position.x;
-    const monTop = monitor.position.y;
-    const monRight = monitor.position.x + monitor.size.width;
-    const monBottom = monitor.position.y + monitor.size.height;
-    if (nextY < monTop) nextY = monTop;
-    if (nextY + nextHPhys > monBottom) {
-      nextY = Math.max(monTop, monBottom - nextHPhys);
-    }
-    if (nextX + nextWPhys > monRight) {
-      nextX = Math.max(monLeft, monRight - nextWPhys);
-    }
-    if (nextX < monLeft) nextX = monLeft;
+    const margin = Math.round(WORK_AREA_MARGIN_CSS_PX * scale);
+    const clamped = clampFrameToWorkArea(
+      { x: nextX, y: nextY, width: nextWPhys, height: nextHPhys },
+      {
+        x: wa.position.x,
+        y: wa.position.y,
+        width: wa.size.width,
+        height: wa.size.height,
+      },
+      margin,
+    );
+    nextX = clamped.x;
+    nextY = clamped.y;
   }
 
+  const positionChanged = nextX !== prevPos.x || nextY !== prevPos.y;
   await withSuppressedPositionSave(async () => {
     await win.setSize(new LogicalSize(nextW, nextH));
-    if (nextX !== prevPos.x || nextY !== prevPos.y || mode !== "resize") {
+    if (positionChanged || mode !== "resize") {
       await win.setPosition(new PhysicalPosition(nextX, nextY));
     }
   });
+  if (!expanded && mode === "resize" && positionChanged) {
+    await persistCollapsedPosition(nextX, nextY);
+  }
 }
 
 async function setExpanded(next: boolean): Promise<void> {
@@ -307,11 +320,32 @@ function bindDragAndToggle(root: HTMLElement): void {
         const win = getCurrentWindow();
         const pos = await win.outerPosition();
         const size = await win.outerSize();
-        await persistCollapsedPosition(pos.x, pos.y);
+        const monitor = await currentMonitor();
+        const scale = await win.scaleFactor();
+        let next = { x: pos.x, y: pos.y };
+        if (monitor) {
+          const wa = monitor.workArea;
+          next = clampFrameToWorkArea(
+            { x: pos.x, y: pos.y, width: size.width, height: size.height },
+            {
+              x: wa.position.x,
+              y: wa.position.y,
+              width: wa.size.width,
+              height: wa.size.height,
+            },
+            Math.round(WORK_AREA_MARGIN_CSS_PX * scale),
+          );
+        }
+        if (next.x !== pos.x || next.y !== pos.y) {
+          await withSuppressedPositionSave(() =>
+            win.setPosition(new PhysicalPosition(next.x, next.y)),
+          );
+        }
+        await persistCollapsedPosition(next.x, next.y);
         if (!expanded) {
           collapsedFrame = {
-            x: pos.x,
-            y: pos.y,
+            x: next.x,
+            y: next.y,
             width: size.width,
             height: size.height,
           };

@@ -94,6 +94,9 @@ html[data-theme="light"] .capsule {
 
 body:not(.is-expanded) .capsule {
   height: auto;
+  border-radius: 999px;
+  box-shadow: none;
+  clip-path: inset(0 round 999px);
 }
 
 .capsule.expanded {

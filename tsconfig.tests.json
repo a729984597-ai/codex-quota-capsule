@@ -5,5 +5,8 @@
     "allowImportingTsExtensions": true,
     "types": ["node"]
   },
-  "include": ["packages/*/test/**/*.test.ts"]
+  "include": [
+    "apps/windows/test/**/*.test.ts",
+    "packages/*/test/**/*.test.ts"
+  ]
 }
