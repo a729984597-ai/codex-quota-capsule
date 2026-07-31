@@ -11,7 +11,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Mutex;
 use std::time::Duration;
 
-use tauri::{AppHandle, Manager, PhysicalPosition};
+use tauri::{AppHandle, Manager, PhysicalPosition, WebviewWindow};
 
 use crate::persist::{append_diagnostic_log, read_window_position};
 use crate::refresh::AppState;
@@ -20,13 +20,13 @@ static RESTORE_IN_FLIGHT: AtomicBool = AtomicBool::new(false);
 
 /// Re-apply the last user-saved position after a short settle delay.
 pub fn restore_saved_position(app: &AppHandle, reason: &str) {
-    let Some(pos) = read_window_position() else {
+    let Some(initial_pos) = read_window_position() else {
         return;
     };
-    if !is_plausible_position(pos.x, pos.y) {
+    if !is_plausible_position(initial_pos.x, initial_pos.y) {
         append_diagnostic_log(&format!(
             "placement skip bad saved pos ({:.0},{:.0})",
-            pos.x, pos.y
+            initial_pos.x, initial_pos.y
         ));
         return;
     }
@@ -39,10 +39,18 @@ pub fn restore_saved_position(app: &AppHandle, reason: &str) {
         // Display topology needs a moment to settle after power-on.
         for delay_ms in [250u64, 800, 1600] {
             std::thread::sleep(Duration::from_millis(delay_ms));
+            // A user may drag the capsule while an older restore is settling.
+            // Always use the latest explicitly saved position, never the
+            // snapshot captured when this restore sequence started.
+            let Some(pos) = read_window_position() else {
+                continue;
+            };
+            if !is_plausible_position(pos.x, pos.y) {
+                continue;
+            }
             let app = handle.clone();
             let app_main = app.clone();
             let reason = reason.clone();
-            let pos = pos.clone();
             let _ = app.run_on_main_thread(move || {
                 apply_position(&app_main, &pos, &reason);
             });
@@ -83,12 +91,46 @@ fn apply_position(app: &AppHandle, pos: &crate::model::WindowPosition, reason: &
             margin,
         );
     }
-    let _ = win.set_position(PhysicalPosition::new(x, y));
+    // Style/region changes can make the Windows shell constrain the HWND back
+    // into the work area. Apply those first, then make positioning the final
+    // native operation so a user-selected taskbar location survives wake-up.
     crate::layering::sync_window_layer(&win);
+    set_window_position(&win, x, y);
     app.state::<AppState>()
         .suppress_position_save
         .store(false, Ordering::SeqCst);
-    append_diagnostic_log(&format!("placement restore ({reason}) -> ({x},{y})"));
+    let actual = win
+        .outer_position()
+        .map(|p| format!(" observed=({},{})", p.x, p.y))
+        .unwrap_or_default();
+    append_diagnostic_log(&format!(
+        "placement restore ({reason}) -> ({x},{y}){actual}"
+    ));
+}
+
+fn set_window_position(win: &WebviewWindow, x: i32, y: i32) {
+    let _ = win.set_position(PhysicalPosition::new(x, y));
+
+    #[cfg(windows)]
+    {
+        use windows_sys::Win32::UI::WindowsAndMessaging::{
+            SetWindowPos, HWND_TOPMOST, SWP_NOACTIVATE, SWP_NOSIZE,
+        };
+
+        if let Ok(hwnd) = win.hwnd() {
+            unsafe {
+                SetWindowPos(
+                    hwnd.0 as _,
+                    HWND_TOPMOST,
+                    x,
+                    y,
+                    0,
+                    0,
+                    SWP_NOSIZE | SWP_NOACTIVATE,
+                );
+            }
+        }
+    }
 }
 
 fn clamp_axis_to_monitor(
@@ -123,6 +165,95 @@ fn window_is_parked_offscreen(app: &AppHandle) -> bool {
     }
 }
 
+/// Detect the specific shell correction seen after display wake: a capsule
+/// deliberately placed over a reserved area (normally the taskbar) is moved
+/// wholly back into the work area. Ordinary in-work-area positions and the
+/// larger expanded window do not match this predicate.
+fn window_was_moved_out_of_reserved_area(app: &AppHandle) -> bool {
+    let Some(saved) = read_window_position() else {
+        return false;
+    };
+    let Some(win) = app.get_webview_window("main") else {
+        return false;
+    };
+    let (Ok(current), Ok(size), Ok(Some(monitor))) = (
+        win.outer_position(),
+        win.outer_size(),
+        win.current_monitor(),
+    ) else {
+        return false;
+    };
+
+    let width = i32::try_from(size.width).unwrap_or(i32::MAX);
+    let height = i32::try_from(size.height).unwrap_or(i32::MAX);
+    let monitor_bounds = Bounds {
+        x: monitor.position().x,
+        y: monitor.position().y,
+        width: i32::try_from(monitor.size().width).unwrap_or(i32::MAX),
+        height: i32::try_from(monitor.size().height).unwrap_or(i32::MAX),
+    };
+    let work = monitor.work_area();
+    let work_bounds = Bounds {
+        x: work.position.x,
+        y: work.position.y,
+        width: i32::try_from(work.size.width).unwrap_or(i32::MAX),
+        height: i32::try_from(work.size.height).unwrap_or(i32::MAX),
+    };
+
+    reserved_area_position_was_constrained(
+        Point {
+            x: saved.x as i32,
+            y: saved.y as i32,
+        },
+        Point {
+            x: current.x,
+            y: current.y,
+        },
+        width,
+        height,
+        monitor_bounds,
+        work_bounds,
+    )
+}
+
+#[derive(Clone, Copy)]
+struct Point {
+    x: i32,
+    y: i32,
+}
+
+#[derive(Clone, Copy)]
+struct Bounds {
+    x: i32,
+    y: i32,
+    width: i32,
+    height: i32,
+}
+
+fn reserved_area_position_was_constrained(
+    saved: Point,
+    current: Point,
+    width: i32,
+    height: i32,
+    monitor: Bounds,
+    work: Bounds,
+) -> bool {
+    if saved.x == current.x && saved.y == current.y {
+        return false;
+    }
+
+    frame_fits(saved, width, height, monitor)
+        && !frame_fits(saved, width, height, work)
+        && frame_fits(current, width, height, work)
+}
+
+fn frame_fits(position: Point, width: i32, height: i32, bounds: Bounds) -> bool {
+    position.x >= bounds.x
+        && position.y >= bounds.y
+        && position.x.saturating_add(width) <= bounds.x.saturating_add(bounds.width)
+        && position.y.saturating_add(height) <= bounds.y.saturating_add(bounds.height)
+}
+
 /// Watch for monitor layout changes (sleep/wake, cable reconnect) and restore.
 /// Also recover if the HWND was parked off-screen without a topology change.
 pub fn start_display_watcher(app: AppHandle) {
@@ -152,6 +283,13 @@ pub fn start_display_watcher(app: AppHandle) {
             if !RESTORE_IN_FLIGHT.load(Ordering::SeqCst) && window_is_parked_offscreen(&app) {
                 append_diagnostic_log("window parked off-screen; restoring");
                 restore_saved_position(&app, "offscreen");
+                continue;
+            }
+            if !RESTORE_IN_FLIGHT.load(Ordering::SeqCst)
+                && window_was_moved_out_of_reserved_area(&app)
+            {
+                append_diagnostic_log("window moved out of reserved area; restoring");
+                restore_saved_position(&app, "reserved-area-drift");
             }
         }
     });
@@ -213,7 +351,7 @@ fn monitor_fingerprint() -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::clamp_axis_to_monitor;
+    use super::{clamp_axis_to_monitor, reserved_area_position_was_constrained, Bounds, Point};
 
     #[test]
     fn keeps_a_saved_position_inside_the_taskbar() {
@@ -228,5 +366,71 @@ mod tests {
     #[test]
     fn supports_negative_monitor_coordinates() {
         assert_eq!(clamp_axis_to_monitor(-2000, 348, -1920, 1920, 0), -1920);
+    }
+
+    #[test]
+    fn detects_taskbar_position_constrained_into_work_area() {
+        assert!(reserved_area_position_was_constrained(
+            Point { x: 1339, y: 1039 },
+            Point { x: 1339, y: 987 },
+            348,
+            41,
+            Bounds {
+                x: 0,
+                y: 0,
+                width: 1920,
+                height: 1080,
+            },
+            Bounds {
+                x: 0,
+                y: 0,
+                width: 1920,
+                height: 1032,
+            },
+        ));
+    }
+
+    #[test]
+    fn ignores_normal_in_work_area_movement() {
+        assert!(!reserved_area_position_was_constrained(
+            Point { x: 1200, y: 900 },
+            Point { x: 1200, y: 850 },
+            348,
+            41,
+            Bounds {
+                x: 0,
+                y: 0,
+                width: 1920,
+                height: 1080,
+            },
+            Bounds {
+                x: 0,
+                y: 0,
+                width: 1920,
+                height: 1032,
+            },
+        ));
+    }
+
+    #[test]
+    fn ignores_expanded_frame_at_collapsed_saved_position() {
+        assert!(!reserved_area_position_was_constrained(
+            Point { x: 1339, y: 1039 },
+            Point { x: 1339, y: 760 },
+            348,
+            320,
+            Bounds {
+                x: 0,
+                y: 0,
+                width: 1920,
+                height: 1080,
+            },
+            Bounds {
+                x: 0,
+                y: 0,
+                width: 1920,
+                height: 1032,
+            },
+        ));
     }
 }
