@@ -666,11 +666,13 @@ fn refresh_inner(app: &AppHandle) -> Result<CapsuleViewModel, String> {
     let live = spawn_refresh(&node, &script, &root, &effective_provider, cached)?;
     if live.ok {
         let vm = live.view_model.clone();
+        let mut persisted_vm = vm.clone();
+        persisted_vm.clear_subscription_for_persistence();
         let _ = write_last_success(&LastSuccessFile {
             used_percent: vm.used_percent,
             fetched_at_iso: vm.fetched_at_iso.clone(),
             resets_at_iso: vm.resets_at_iso.clone(),
-            view_model: vm.clone(),
+            view_model: persisted_vm,
         });
         return publish(app, &state, vm, true);
     }
@@ -849,6 +851,7 @@ fn vm_from_slice(slice: &ProviderSlice) -> CapsuleViewModel {
         judgment_text: slice.judgment_text.clone(),
         used_percent: slice.used_percent,
         usage_breakdown: slice.usage_breakdown.clone(),
+        subscription: slice.subscription.clone(),
         reset_countdown_text: slice.reset_countdown_text.clone(),
         freshness_text: slice.freshness_text.clone(),
         is_stale: slice.is_stale,

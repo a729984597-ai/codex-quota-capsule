@@ -6,6 +6,13 @@ export type UsageBreakdown = {
   totalPercent: number | null;
 };
 
+export type SubscriptionValidity = {
+  planLabel: string;
+  validityText: string;
+  expiresAtText: string;
+  expiresAtIso: string;
+};
+
 export type ProviderSlice = {
   provider: "codex" | "cursor";
   state: string;
@@ -14,6 +21,7 @@ export type ProviderSlice = {
   judgmentText: string;
   usedPercent: number | null;
   usageBreakdown?: UsageBreakdown | null;
+  subscription?: SubscriptionValidity | null;
   resetCountdownText: string;
   freshnessText: string;
   isStale: boolean;
@@ -31,6 +39,7 @@ export type CapsuleViewModel = {
   judgmentText: string;
   usedPercent: number | null;
   usageBreakdown?: UsageBreakdown | null;
+  subscription?: SubscriptionValidity | null;
   resetCountdownText: string;
   freshnessText: string;
   isStale: boolean;
@@ -49,6 +58,7 @@ const PLACEHOLDER: CapsuleViewModel = {
   judgmentText: "等待首次刷新…",
   usedPercent: null,
   usageBreakdown: null,
+  subscription: null,
   resetCountdownText: "重置时间未知",
   freshnessText: "尚未成功读取",
   isStale: false,
@@ -204,6 +214,7 @@ export function renderCapsule(
       <span>${escapeHtml(model.freshnessText)}</span>
       <span>${escapeHtml(model.resetCountdownText)}</span>
     </div>
+    ${subscriptionRow(model.subscription)}
     <button type="button" id="refresh-btn" class="refresh${refreshing ? " is-busy" : ""}" ${refreshing ? "disabled" : ""}>
       <span class="refresh-spinner" aria-hidden="true"></span>
       <span class="refresh-label">${refreshLabel}</span>
@@ -321,6 +332,7 @@ function renderDual(
             <span>${escapeHtml(p.freshnessText)}</span>
             <span>${escapeHtml(p.resetCountdownText)}</span>
           </div>
+          ${subscriptionRow(p.subscription)}
         </div>
       `;
     })
@@ -357,6 +369,8 @@ export function capsuleHeights(
   const hasCursorSplit =
     !!model.usageBreakdown ||
     !!model.providers?.some((p) => p.provider === "cursor" && p.usageBreakdown);
+  const hasSubscription =
+    !!model.subscription || !!model.providers?.some((p) => !!p.subscription);
   if (!expanded && layoutMode === "minimal") {
     if (model.displayMode === "both") {
       return { width: 240, height: 28 };
@@ -365,13 +379,26 @@ export function capsuleHeights(
   }
   if (model.displayMode === "both") {
     // Fixed expanded width so short judgment text doesn't shrink the bars.
-    return { width: expanded ? 220 : 380, height: expanded ? (hasCursorSplit ? 210 : 185) : 52 };
+    const expandedHeight = (hasCursorSplit ? 210 : 185) + (hasSubscription ? 30 : 0);
+    return { width: expanded ? 220 : 380, height: expanded ? expandedHeight : 52 };
   }
   if (hasCursorSplit) {
-    return { width: expanded ? 220 : 340, height: expanded ? 150 : 36 };
+    return { width: expanded ? 220 : 340, height: expanded ? 150 + (hasSubscription ? 30 : 0) : 36 };
   }
   // Single provider with one usage bar (e.g. codex).
-  return { width: expanded ? 220 : 300, height: expanded ? 135 : 36 };
+  return { width: expanded ? 220 : 300, height: expanded ? 135 + (hasSubscription ? 30 : 0) : 36 };
+}
+
+function subscriptionRow(
+  subscription?: SubscriptionValidity | null,
+): string {
+  if (!subscription) return "";
+  return `
+    <div class="meta" title="${escapeHtml(subscription.expiresAtIso)}">
+      <span>${escapeHtml(subscription.planLabel)} ${escapeHtml(subscription.validityText)}</span>
+      <span>${escapeHtml(subscription.expiresAtText)}</span>
+    </div>
+  `;
 }
 
 function shortUnavailableHint(code: string | null): string {

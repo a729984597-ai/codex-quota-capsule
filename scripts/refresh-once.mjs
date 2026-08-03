@@ -92,6 +92,7 @@ function snapshotToSlice(snapshot, fetchedAt, provider) {
       isStale: false,
       diagnosticCode: snapshot.diagnosticCode ?? null,
       usageBreakdown: breakdown,
+      subscription: snapshot.subscription ?? null,
     });
   }
   const forecast = predictRunway(snapshot, fetchedAt);
@@ -104,6 +105,7 @@ function snapshotToSlice(snapshot, fetchedAt, provider) {
     isStale: false,
     diagnosticCode: snapshot.diagnosticCode ?? null,
     usageBreakdown: breakdown,
+    subscription: snapshot.subscription ?? null,
   });
 }
 
@@ -128,6 +130,7 @@ function sliceToViewModel(slice) {
     judgmentText: slice.judgmentText,
     usedPercent: slice.usedPercent,
     usageBreakdown: slice.usageBreakdown ?? null,
+    subscription: slice.subscription ?? null,
     resetCountdownText: slice.resetCountdownText,
     freshnessText: slice.freshnessText,
     isStale: slice.isStale,
@@ -204,6 +207,7 @@ try {
       statusLabel: "数据暂不可用",
       judgmentText: "暂时没有可用的额度周期数据",
       usedPercent: null,
+      subscription: null,
       resetCountdownText: "重置时间未知",
       freshnessText: "尚未成功读取",
       isStale: false,

@@ -20,6 +20,7 @@ const srcExe = join(releaseDir, "quota-capsule-windows.exe");
 const srcResources = join(releaseDir, "resources");
 const destExe = join(root, "Quota Capsule Beta.exe");
 const destResources = join(root, "resources");
+const fallbackExe = join(root, "Quota Capsule Beta-0.1.0.exe");
 
 if (!existsSync(srcExe)) {
   console.error(`missing release exe: ${srcExe}`);
@@ -30,10 +31,29 @@ if (!existsSync(srcResources)) {
   process.exit(1);
 }
 
-cpSync(srcExe, destExe);
-rmSync(destResources, { recursive: true, force: true });
-mkdirSync(destResources, { recursive: true });
+let portableExe = destExe;
+try {
+  cpSync(srcExe, destExe);
+} catch (error) {
+  // A running portable build keeps its image locked on Windows. Keep the
+  // build useful by writing a versioned sibling instead of leaving old
+  // bridge resources beside a freshly built executable.
+  cpSync(srcExe, fallbackExe);
+  portableExe = fallbackExe;
+  const reason = error instanceof Error ? error.message : String(error);
+  console.warn(`could not replace running portable app; wrote ${fallbackExe}: ${reason}`);
+}
+try {
+  rmSync(destResources, { recursive: true, force: true });
+  mkdirSync(destResources, { recursive: true });
+} catch (error) {
+  // The running portable app can keep its resource directory open. Merging
+  // still safely refreshes every packaged bridge/runtime file in place.
+  mkdirSync(destResources, { recursive: true });
+  const reason = error instanceof Error ? error.message : String(error);
+  console.warn(`could not replace running resource directory; merging files: ${reason}`);
+}
 cpSync(srcResources, destResources, { recursive: true });
 
-console.log(`portable app → ${destExe}`);
+console.log(`portable app → ${portableExe}`);
 console.log(`portable resources → ${destResources}`);

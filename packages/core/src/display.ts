@@ -7,6 +7,8 @@ import type {
   ProviderId,
   ProviderSlice,
   RunwayForecast,
+  SubscriptionInfo,
+  SubscriptionValidity,
   UsageBreakdown,
 } from "./model.js";
 
@@ -21,6 +23,7 @@ export type BuildViewModelInput = {
   displayMode?: DisplayMode;
   providers?: ProviderSlice[];
   usageBreakdown?: UsageBreakdown | null;
+  subscription?: SubscriptionInfo | null;
 };
 
 const STATUS: Record<CapsuleState, string> = {
@@ -54,6 +57,7 @@ export function buildCapsuleViewModel(input: BuildViewModelInput): CapsuleViewMo
       judgmentText: "正在显示上次成功的额度数据，恢复实时读取前暂不判断消耗速度。",
       usedPercent: input.forecast.usedPercent,
       usageBreakdown: input.usageBreakdown ?? null,
+      subscription: formatSubscription(input.subscription, now),
       resetCountdownText: formatCountdown(input.resetsAt, now),
       freshnessText: formatFreshness(input.fetchedAt, now, true),
       isStale: true,
@@ -77,6 +81,7 @@ export function buildCapsuleViewModel(input: BuildViewModelInput): CapsuleViewMo
         : judgmentFor(input.forecast, input.usageBreakdown),
     usedPercent: input.forecast.usedPercent,
     usageBreakdown: input.usageBreakdown ?? null,
+    subscription: formatSubscription(input.subscription, now),
     resetCountdownText: formatCountdown(input.resetsAt, now),
     freshnessText: formatFreshness(input.fetchedAt, now, false),
     isStale: false,
@@ -97,6 +102,7 @@ export function buildProviderSlice(input: {
   isStale?: boolean;
   diagnosticCode?: DiagnosticCode | null;
   usageBreakdown?: UsageBreakdown | null;
+  subscription?: SubscriptionInfo | null;
 }): ProviderSlice {
   const vm = buildCapsuleViewModel({
     ...input,
@@ -111,6 +117,7 @@ export function buildProviderSlice(input: {
     judgmentText: vm.judgmentText,
     usedPercent: vm.usedPercent,
     usageBreakdown: vm.usageBreakdown ?? null,
+    subscription: vm.subscription ?? null,
     resetCountdownText: vm.resetCountdownText,
     freshnessText: vm.freshnessText,
     isStale: vm.isStale,
@@ -133,6 +140,7 @@ export function mergeDualViewModel(
     statusLabel: "双源监控",
     judgmentText: `Cursor ${formatSliceLine(cursor)}；Codex ${formatSliceLine(codex)}`,
     usedPercent: worse.usedPercent,
+    subscription: null,
     resetCountdownText: worse.resetCountdownText,
     freshnessText: pickFreshest(cursor, codex),
     isStale: cursor.isStale && codex.isStale,
@@ -227,6 +235,41 @@ function formatResetMoment(resetsAt: Date): string {
   const hh = String(resetsAt.getHours()).padStart(2, "0");
   const mi = String(resetsAt.getMinutes()).padStart(2, "0");
   return `${mm}/${dd} ${hh}:${mi}`;
+}
+
+function formatSubscription(
+  subscription: SubscriptionInfo | null | undefined,
+  now: Date,
+): SubscriptionValidity | null {
+  if (!subscription || subscription.planType.toLowerCase() !== "plus") {
+    return null;
+  }
+
+  const expiresAt = subscription.activeUntil;
+  const expiresMs = expiresAt.getTime();
+  if (!Number.isFinite(expiresMs)) return null;
+
+  const remainingMs = expiresMs - now.getTime();
+  const validityText =
+    remainingMs <= 0
+      ? "已到期"
+      : `有效期 ${Math.max(1, Math.ceil(remainingMs / 86_400_000))}天`;
+
+  return {
+    planLabel: "Plus",
+    validityText,
+    expiresAtText: formatFullMoment(expiresAt),
+    expiresAtIso: expiresAt.toISOString(),
+  };
+}
+
+function formatFullMoment(value: Date): string {
+  const yyyy = value.getFullYear();
+  const mm = String(value.getMonth() + 1).padStart(2, "0");
+  const dd = String(value.getDate()).padStart(2, "0");
+  const hh = String(value.getHours()).padStart(2, "0");
+  const mi = String(value.getMinutes()).padStart(2, "0");
+  return `${yyyy}-${mm}-${dd} ${hh}:${mi}`;
 }
 
 function formatFreshness(fetchedAt: Date | null, now: Date, stale: boolean): string {

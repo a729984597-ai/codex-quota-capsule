@@ -28,12 +28,26 @@ export type UsageBreakdown = {
   totalPercent: number | null;
 };
 
+/** Non-secret subscription metadata derived from the local Codex ID token. */
+export type SubscriptionInfo = {
+  planType: string;
+  activeUntil: Date;
+};
+
+export type SubscriptionValidity = {
+  planLabel: string;
+  validityText: string;
+  expiresAtText: string;
+  expiresAtIso: string;
+};
+
 export type AgentQuotaSnapshot = {
   provider: string;
   sourceStatus: SourceStatus;
   fetchedAt: Date;
   weeklyWindow?: QuotaWindow;
   usageBreakdown?: UsageBreakdown;
+  subscription?: SubscriptionInfo;
   errorMessage?: string;
   diagnosticCode?: DiagnosticCode;
 };
@@ -68,6 +82,7 @@ export type ProviderSlice = {
   judgmentText: string;
   usedPercent: number | null;
   usageBreakdown?: UsageBreakdown | null;
+  subscription?: SubscriptionValidity | null;
   resetCountdownText: string;
   freshnessText: string;
   isStale: boolean;
@@ -87,6 +102,8 @@ export type CapsuleViewModel = {
   usedPercent: number | null;
   /** Cursor: Auto+Composer / API split; absent for Codex. */
   usageBreakdown?: UsageBreakdown | null;
+  /** Codex Plus subscription validity; absent when unavailable. */
+  subscription?: SubscriptionValidity | null;
   resetCountdownText: string;
   freshnessText: string;
   isStale: boolean;

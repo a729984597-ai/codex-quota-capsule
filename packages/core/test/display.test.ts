@@ -46,4 +46,22 @@ describe("buildCapsuleViewModel", () => {
     expect(vm.usedPercent).toBe(40);
     expect(vm.judgmentText).toContain("上次成功");
   });
+
+  it("formats Codex Plus subscription validity for the expanded view", () => {
+    const vm = buildCapsuleViewModel({
+      forecast: base,
+      fetchedAt: new Date("2026-08-03T02:00:00.000Z"),
+      resetsAt: new Date("2026-08-09T00:04:00.000Z"),
+      now: new Date("2026-08-03T02:00:00.000Z"),
+      subscription: {
+        planType: "plus",
+        activeUntil: new Date("2026-08-22T01:59:00.000Z"),
+      },
+    });
+
+    expect(vm.subscription?.planLabel).toBe("Plus");
+    expect(vm.subscription?.validityText).toBe("有效期 19天");
+    expect(vm.subscription?.expiresAtText).toMatch(/^2026-08-22 \d{2}:59$/);
+    expect(vm.subscription?.expiresAtIso).toBe("2026-08-22T01:59:00.000Z");
+  });
 });

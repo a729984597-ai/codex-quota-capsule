@@ -6,6 +6,7 @@ import {
   ProcessCodexAppServerTransport,
   type CodexAppServerTransport,
 } from "./transport.js";
+import { readCodexSubscriptionValidity } from "./subscription.js";
 
 export type CodexAppServerReadOptions = {
   fetchedAt?: Date;
@@ -35,10 +36,14 @@ export async function readCodexRateLimits(
   );
 
   try {
-    return await readCodexRateLimitsFromTransport(transport, {
+    const snapshot = await readCodexRateLimitsFromTransport(transport, {
       fetchedAt,
       timeoutMs: options.timeoutMs,
     });
+    if (snapshot.sourceStatus !== "ok") return snapshot;
+
+    const subscription = await readCodexSubscriptionValidity();
+    return subscription ? { ...snapshot, subscription } : snapshot;
   } finally {
     transport.close();
   }

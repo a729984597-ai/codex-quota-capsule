@@ -10,6 +10,15 @@ pub struct UsageBreakdown {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+pub struct SubscriptionValidity {
+    pub plan_label: String,
+    pub validity_text: String,
+    pub expires_at_text: String,
+    pub expires_at_iso: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct ProviderSlice {
     pub provider: String,
     pub state: String,
@@ -19,6 +28,8 @@ pub struct ProviderSlice {
     pub used_percent: Option<f64>,
     #[serde(default)]
     pub usage_breakdown: Option<UsageBreakdown>,
+    #[serde(default)]
+    pub subscription: Option<SubscriptionValidity>,
     pub reset_countdown_text: String,
     pub freshness_text: String,
     pub is_stale: bool,
@@ -41,6 +52,8 @@ pub struct CapsuleViewModel {
     pub used_percent: Option<f64>,
     #[serde(default)]
     pub usage_breakdown: Option<UsageBreakdown>,
+    #[serde(default)]
+    pub subscription: Option<SubscriptionValidity>,
     pub reset_countdown_text: String,
     pub freshness_text: String,
     pub is_stale: bool,
@@ -70,6 +83,7 @@ impl CapsuleViewModel {
             judgment_text: "等待首次刷新…".into(),
             used_percent: None,
             usage_breakdown: None,
+            subscription: None,
             reset_countdown_text: "重置时间未知".into(),
             freshness_text: "尚未成功读取".into(),
             is_stale: false,
@@ -99,6 +113,7 @@ impl CapsuleViewModel {
             judgment_text: "未找到 Node 运行时。请使用完整绿色版（含 resources/runtime/node），或安装系统 Node.js 22+ 后重试。".into(),
             used_percent: None,
             usage_breakdown: None,
+            subscription: None,
             reset_countdown_text: "缺 Node 运行时".into(),
             freshness_text: "尚未成功读取".into(),
             is_stale: false,
@@ -141,6 +156,16 @@ impl CapsuleViewModel {
                     .iter()
                     .any(|provider| provider.is_stale && provider.used_percent.is_some())
             })
+    }
+
+    /// Subscription validity is auth-derived metadata and must not enter cache files.
+    pub fn clear_subscription_for_persistence(&mut self) {
+        self.subscription = None;
+        if let Some(providers) = self.providers.as_mut() {
+            for provider in providers {
+                provider.subscription = None;
+            }
+        }
     }
 }
 
@@ -330,6 +355,7 @@ mod tests {
             judgment_text: "读取失败".into(),
             used_percent: None,
             usage_breakdown: None,
+            subscription: None,
             reset_countdown_text: "重置未知".into(),
             freshness_text: "尚未成功读取".into(),
             is_stale: false,
@@ -349,6 +375,7 @@ mod tests {
             judgment_text: "正在显示缓存".into(),
             used_percent: Some(25.0),
             usage_breakdown: None,
+            subscription: None,
             reset_countdown_text: "2d".into(),
             freshness_text: "上次成功：10 分钟前".into(),
             is_stale: true,

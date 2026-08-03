@@ -12,3 +12,8 @@ export {
   readCodexRateLimitsFromTransport,
 } from "./read.js";
 export type { CodexAppServerReadOptions } from "./read.js";
+export {
+  parseCodexSubscriptionAuth,
+  readCodexSubscriptionValidity,
+} from "./subscription.js";
+export type { ReadCodexSubscriptionOptions } from "./subscription.js";
