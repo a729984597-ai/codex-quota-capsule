@@ -13,7 +13,7 @@ export function classifyCursorError(message: string): DiagnosticCode {
     return "cli_missing";
   }
   if (
-    /unauthorized|unauthenticated|\b401\b|\b403\b|accessToken missing|not be logged in|jwt expired|invalid token|http 401|http 403/.test(
+    /unauthorized|unauthenticated|\b401\b|\b403\b|accessToken missing|not be logged in|jwt expired|invalid token|http 401|http 403|shouldlogout|empty access_token|refresh requires login|access token expired/.test(
       lower,
     )
   ) {
