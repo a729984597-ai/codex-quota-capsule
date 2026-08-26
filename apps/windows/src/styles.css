@@ -442,6 +442,35 @@ body:not(.is-expanded) .capsule {
   color: var(--text-muted);
 }
 
+.provider-logo {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
+  height: 14px;
+  flex: 0 0 14px;
+  background-position: center;
+  background-repeat: no-repeat;
+  background-size: contain;
+}
+
+.provider-logo-codex {
+  background-image: url("./assets/codex-logo.png");
+  background-size: 11px 11px;
+}
+
+html[data-theme="light"] .provider-logo-codex {
+  filter: invert(1);
+}
+
+.provider-logo-cursor {
+  box-sizing: border-box;
+  border-radius: 3px;
+  background-color: #151719;
+  background-image: url("./assets/cursor-logo.png");
+  background-size: 11px 11px;
+}
+
 .refresh {
   align-self: flex-end;
   display: inline-flex;

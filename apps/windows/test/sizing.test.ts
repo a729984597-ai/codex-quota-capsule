@@ -11,6 +11,14 @@ describe("fittedWindowWidth", () => {
         measuredWidth: 306,
       }),
     ).toBe(306);
+    expect(
+      fittedWindowWidth({
+        expanded: false,
+        layoutMode: "minimal-logo",
+        fallbackWidth: 280,
+        measuredWidth: 220,
+      }),
+    ).toBe(220);
   });
 
   it("keeps the configured width for standard and expanded layouts", () => {

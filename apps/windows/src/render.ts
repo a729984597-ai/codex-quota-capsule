@@ -154,7 +154,7 @@ function usedHtml(
     : `已用 <b class="${pctClass(usedPercent)}">${Math.round(usedPercent)}%</b>`;
 }
 
-export type LayoutMode = "standard" | "minimal";
+export type LayoutMode = "standard" | "minimal" | "minimal-logo";
 
 export function renderCapsule(
   root: HTMLElement,
@@ -166,7 +166,10 @@ export function renderCapsule(
   root.dataset.tone = model.tone;
   root.classList.toggle("expanded", expanded);
   root.classList.toggle("dual", model.displayMode === "both");
-  root.classList.toggle("minimal", layoutMode === "minimal" && !expanded);
+  const isMinimal = layoutMode === "minimal" || layoutMode === "minimal-logo";
+  const usesProviderLogos = layoutMode === "minimal-logo";
+  root.classList.toggle("minimal", isMinimal && !expanded);
+  root.classList.toggle("minimal-logo", usesProviderLogos && !expanded);
   root.classList.toggle("refreshing", refreshing);
 
   const isDual =
@@ -174,7 +177,7 @@ export function renderCapsule(
     !!model.providers?.length;
 
   // Minimal layout only affects the collapsed view; expand still shows detail.
-  if (!expanded && layoutMode === "minimal") {
+  if (!expanded && isMinimal) {
     if (isDual) {
       root.innerHTML = (model.providers ?? [])
         .map((p) =>
@@ -184,6 +187,7 @@ export function renderCapsule(
             p.tone,
             p.usageBreakdown,
             p.quotaWindows,
+            usesProviderLogos,
           ),
         )
         .join("");
@@ -195,6 +199,7 @@ export function renderCapsule(
       model.tone,
       model.usageBreakdown,
       model.quotaWindows,
+      usesProviderLogos,
     );
     return;
   }
@@ -262,6 +267,7 @@ function minimalChip(
   tone: CapsuleTone,
   breakdown?: UsageBreakdown | null,
   quotaWindows?: QuotaWindowDisplay[] | null,
+  useProviderLogo = false,
 ): string {
   const tag = providerLabel(provider === "both" ? "codex" : provider);
   const hasSplit =
@@ -286,7 +292,7 @@ function minimalChip(
   return `
     <div class="mini-chip" data-tone="${escapeHtml(tone)}">
       <span class="dot" aria-hidden="true"></span>
-      <span class="tag">${escapeHtml(tag)}</span>
+      ${useProviderLogo ? providerLogo(provider) : `<span class="tag">${escapeHtml(tag)}</span>`}
       ${pctHtml}
     </div>
   `;
@@ -335,6 +341,12 @@ function quotaWindowBars(windows?: QuotaWindowDisplay[] | null): string {
         .join("")}
     </div>
   `;
+}
+
+function providerLogo(provider: string): string {
+  const label = providerLabel(provider);
+  const logoClass = provider === "cursor" ? "cursor" : "codex";
+  return `<span class="provider-logo provider-logo-${logoClass}" role="img" aria-label="${label}" title="${label}"></span>`;
 }
 
 function singleBar(usedPercent: number | null, asRemaining = false): string {
@@ -439,11 +451,14 @@ export function capsuleHeights(
   const hasQuotaWindows =
     !!model.quotaWindows?.length ||
     !!model.providers?.some((p) => !!p.quotaWindows?.length);
-  if (!expanded && layoutMode === "minimal") {
+  if (
+    !expanded &&
+    (layoutMode === "minimal" || layoutMode === "minimal-logo")
+  ) {
     if (model.displayMode === "both") {
-      return { width: 240, height: 28 };
+      return { width: layoutMode === "minimal-logo" ? 200 : 240, height: 28 };
     }
-    return { width: 140, height: 28 };
+    return { width: layoutMode === "minimal-logo" ? 112 : 140, height: 28 };
   }
   if (model.displayMode === "both") {
     // Fixed expanded width so short judgment text doesn't shrink the bars.

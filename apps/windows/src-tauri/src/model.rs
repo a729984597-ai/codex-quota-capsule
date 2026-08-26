@@ -272,7 +272,7 @@ impl Default for FontPreference {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct LayoutPreference {
-    /// standard | minimal
+    /// standard | minimal | minimal-logo
     pub mode: String,
 }
 

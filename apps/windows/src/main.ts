@@ -46,7 +46,8 @@ function applyFontSize(size: string): void {
 }
 
 function applyLayoutMode(mode: string): void {
-  layoutMode = mode === "minimal" ? "minimal" : "standard";
+  layoutMode =
+    mode === "minimal" || mode === "minimal-logo" ? mode : "standard";
   paint();
   void fitWindow();
 }

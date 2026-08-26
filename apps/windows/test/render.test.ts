@@ -97,3 +97,35 @@ describe("Codex quota-window rendering", () => {
     expect(capsuleHeights(vm, true).height).toBe(205);
   });
 });
+
+describe("logo minimal rendering", () => {
+  it("replaces provider names with compact accessible logos", () => {
+    const root = {
+      dataset: {},
+      classList: { toggle: () => undefined },
+      innerHTML: "",
+    } as unknown as HTMLElement;
+    const codex = model();
+
+    renderCapsule(root, codex, false, false, "minimal-logo");
+    expect(root.innerHTML).toContain('class="provider-logo provider-logo-codex"');
+    expect(root.innerHTML).toContain('aria-label="Codex"');
+    expect(root.innerHTML).not.toContain('<span class="tag">Codex</span>');
+    expect(root.innerHTML).not.toContain("<svg");
+
+    const cursor: CapsuleViewModel = {
+      ...codex,
+      provider: "cursor",
+      quotaWindows: null,
+      usageBreakdown: {
+        autoPercent: 18,
+        apiPercent: 67,
+        totalPercent: 42,
+      },
+    };
+    renderCapsule(root, cursor, false, false, "minimal-logo");
+    expect(root.innerHTML).toContain('class="provider-logo provider-logo-cursor"');
+    expect(root.innerHTML).toContain('aria-label="Cursor"');
+    expect(root.innerHTML).not.toContain('<span class="tag">Cursor</span>');
+  });
+});

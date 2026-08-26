@@ -101,12 +101,14 @@ impl FontMenuItems {
 pub struct LayoutMenuItems {
     pub standard: tauri::menu::CheckMenuItem<tauri::Wry>,
     pub minimal: tauri::menu::CheckMenuItem<tauri::Wry>,
+    pub minimal_logo: tauri::menu::CheckMenuItem<tauri::Wry>,
 }
 
 impl LayoutMenuItems {
     pub fn set_checked(&self, mode: &str) {
         let _ = self.standard.set_checked(mode == "standard");
         let _ = self.minimal.set_checked(mode == "minimal");
+        let _ = self.minimal_logo.set_checked(mode == "minimal-logo");
     }
 }
 
@@ -269,7 +271,7 @@ pub fn get_font_size(app: AppHandle) -> String {
 
 pub fn set_layout_mode(app: &AppHandle, mode: &str) -> Result<(), String> {
     let normalized = match mode {
-        "standard" | "minimal" => mode,
+        "standard" | "minimal" | "minimal-logo" => mode,
         _ => return Err(format!("unsupported layout mode: {mode}")),
     };
     write_layout_preference(&LayoutPreference {

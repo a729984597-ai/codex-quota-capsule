@@ -49,11 +49,19 @@ pub fn show_context_menu(window: tauri::Window) -> Result<(), String> {
         let layout_minimal_i = CheckMenuItem::with_id(
             &app, "ctx_layout_minimal", "极简", true, layout == "minimal", None::<&str>,
         )?;
+        let layout_minimal_logo_i = CheckMenuItem::with_id(
+            &app,
+            "ctx_layout_minimal-logo",
+            "极简 (Logo)",
+            true,
+            layout == "minimal-logo",
+            None::<&str>,
+        )?;
         let layout_menu = Submenu::with_items(
             &app,
             "显示",
             true,
-            &[&layout_standard_i, &layout_minimal_i],
+            &[&layout_standard_i, &layout_minimal_i, &layout_minimal_logo_i],
         )?;
         let order_cursor_i = CheckMenuItem::with_id(
             &app,
@@ -162,7 +170,7 @@ pub fn handle_context_menu_event(app: &AppHandle, id: &str) {
                 let _ = set_provider_mode(&handle, &mode);
             });
         }
-        "ctx_layout_standard" | "ctx_layout_minimal" => {
+        "ctx_layout_standard" | "ctx_layout_minimal" | "ctx_layout_minimal-logo" => {
             let mode = id.trim_start_matches("ctx_layout_").to_string();
             let _ = set_layout_mode(app, &mode);
         }
@@ -224,11 +232,19 @@ pub fn setup_tray(app: &AppHandle) -> tauri::Result<()> {
     let layout_minimal_i = CheckMenuItem::with_id(
         app, "layout_minimal", "极简", true, layout == "minimal", None::<&str>,
     )?;
+    let layout_minimal_logo_i = CheckMenuItem::with_id(
+        app,
+        "layout_minimal-logo",
+        "极简 (Logo)",
+        true,
+        layout == "minimal-logo",
+        None::<&str>,
+    )?;
     let layout_menu = Submenu::with_items(
         app,
         "显示",
         true,
-        &[&layout_standard_i, &layout_minimal_i],
+        &[&layout_standard_i, &layout_minimal_i, &layout_minimal_logo_i],
     )?;
 
     if let Some(state) = app.try_state::<AppState>() {
@@ -236,6 +252,7 @@ pub fn setup_tray(app: &AppHandle) -> tauri::Result<()> {
             *guard = Some(crate::refresh::LayoutMenuItems {
                 standard: layout_standard_i.clone(),
                 minimal: layout_minimal_i.clone(),
+                minimal_logo: layout_minimal_logo_i.clone(),
             });
         }
     }
@@ -391,7 +408,7 @@ pub fn setup_tray(app: &AppHandle) -> tauri::Result<()> {
                     let _ = set_provider_mode(&handle, "both");
                 });
             }
-            "layout_standard" | "layout_minimal" => {
+            "layout_standard" | "layout_minimal" | "layout_minimal-logo" => {
                 let mode = event.id.as_ref().trim_start_matches("layout_").to_string();
                 let _ = set_layout_mode(app, &mode);
             }
