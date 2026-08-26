@@ -19,6 +19,16 @@ pub struct SubscriptionValidity {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+pub struct QuotaWindowDisplay {
+    pub label: String,
+    pub used_percent: f64,
+    pub remaining_percent: f64,
+    pub reset_countdown_text: String,
+    pub resets_at_iso: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct ProviderSlice {
     pub provider: String,
     pub state: String,
@@ -26,6 +36,8 @@ pub struct ProviderSlice {
     pub status_label: String,
     pub judgment_text: String,
     pub used_percent: Option<f64>,
+    #[serde(default)]
+    pub quota_windows: Option<Vec<QuotaWindowDisplay>>,
     #[serde(default)]
     pub usage_breakdown: Option<UsageBreakdown>,
     #[serde(default)]
@@ -50,6 +62,8 @@ pub struct CapsuleViewModel {
     pub status_label: String,
     pub judgment_text: String,
     pub used_percent: Option<f64>,
+    #[serde(default)]
+    pub quota_windows: Option<Vec<QuotaWindowDisplay>>,
     #[serde(default)]
     pub usage_breakdown: Option<UsageBreakdown>,
     #[serde(default)]
@@ -82,6 +96,7 @@ impl CapsuleViewModel {
             status_label: "数据暂不可用".into(),
             judgment_text: "等待首次刷新…".into(),
             used_percent: None,
+            quota_windows: None,
             usage_breakdown: None,
             subscription: None,
             reset_countdown_text: "重置时间未知".into(),
@@ -112,6 +127,7 @@ impl CapsuleViewModel {
             status_label: "数据暂不可用".into(),
             judgment_text: "未找到 Node 运行时。请使用完整绿色版（含 resources/runtime/node），或安装系统 Node.js 22+ 后重试。".into(),
             used_percent: None,
+            quota_windows: None,
             usage_breakdown: None,
             subscription: None,
             reset_countdown_text: "缺 Node 运行时".into(),
@@ -354,6 +370,7 @@ mod tests {
             status_label: "数据暂不可用".into(),
             judgment_text: "读取失败".into(),
             used_percent: None,
+            quota_windows: None,
             usage_breakdown: None,
             subscription: None,
             reset_countdown_text: "重置未知".into(),
@@ -374,6 +391,7 @@ mod tests {
             status_label: "数据暂不可用".into(),
             judgment_text: "正在显示缓存".into(),
             used_percent: Some(25.0),
+            quota_windows: None,
             usage_breakdown: None,
             subscription: None,
             reset_countdown_text: "2d".into(),

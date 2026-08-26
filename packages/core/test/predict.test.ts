@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { predictRunway } from "../src/predict.ts";
+import {
+  predictRunway,
+  selectGoverningQuotaWindow,
+} from "../src/predict.ts";
 import type { AgentQuotaSnapshot } from "../src/model.ts";
 
 function snap(input: {
@@ -64,5 +67,25 @@ describe("predictRunway", () => {
       t0,
     );
     expect(forecast.state).toBe("dataUnavailable");
+  });
+});
+
+describe("selectGoverningQuotaWindow", () => {
+  it("uses the window with the least remaining quota", () => {
+    const weekly = snap({
+      used: 35,
+      remaining: 65,
+      hoursLeft: 72,
+      fetchedAt: new Date("2026-07-16T00:00:00.000Z"),
+    }).weeklyWindow!;
+    const fiveHour = {
+      ...weekly,
+      label: "five-hour",
+      windowMinutes: 300,
+      usedPercent: 95,
+      remainingPercent: 5,
+    };
+
+    expect(selectGoverningQuotaWindow([fiveHour, weekly])).toBe(fiveHour);
   });
 });

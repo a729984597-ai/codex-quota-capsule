@@ -64,4 +64,46 @@ describe("buildCapsuleViewModel", () => {
     expect(vm.subscription?.expiresAtText).toMatch(/^2026-08-22 \d{2}:59$/);
     expect(vm.subscription?.expiresAtIso).toBe("2026-08-22T01:59:00.000Z");
   });
+
+  it("formats five-hour and weekly windows for Codex display", () => {
+    const vm = buildCapsuleViewModel({
+      forecast: base,
+      fetchedAt: new Date("2026-07-16T00:00:00.000Z"),
+      resetsAt: new Date("2026-07-19T00:00:00.000Z"),
+      now: new Date("2026-07-16T00:00:00.000Z"),
+      quotaWindows: [
+        {
+          label: "five-hour",
+          windowMinutes: 300,
+          usedPercent: 20,
+          remainingPercent: 80,
+          resetsAt: new Date("2026-07-16T03:00:00.000Z"),
+        },
+        {
+          label: "weekly",
+          windowMinutes: 10_080,
+          usedPercent: 35,
+          remainingPercent: 65,
+          resetsAt: new Date("2026-07-19T00:00:00.000Z"),
+        },
+      ],
+    });
+
+    expect(vm.quotaWindows).toEqual([
+      {
+        label: "5小时",
+        usedPercent: 20,
+        remainingPercent: 80,
+        resetCountdownText: expect.stringMatching(/^3h · /),
+        resetsAtIso: "2026-07-16T03:00:00.000Z",
+      },
+      {
+        label: "每周",
+        usedPercent: 35,
+        remainingPercent: 65,
+        resetCountdownText: expect.stringMatching(/^3d · /),
+        resetsAtIso: "2026-07-19T00:00:00.000Z",
+      },
+    ]);
+  });
 });

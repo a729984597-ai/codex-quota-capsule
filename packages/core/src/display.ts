@@ -6,6 +6,8 @@ import type {
   DisplayMode,
   ProviderId,
   ProviderSlice,
+  QuotaWindow,
+  QuotaWindowDisplay,
   RunwayForecast,
   SubscriptionInfo,
   SubscriptionValidity,
@@ -24,6 +26,7 @@ export type BuildViewModelInput = {
   providers?: ProviderSlice[];
   usageBreakdown?: UsageBreakdown | null;
   subscription?: SubscriptionInfo | null;
+  quotaWindows?: QuotaWindow[];
 };
 
 const STATUS: Record<CapsuleState, string> = {
@@ -56,6 +59,7 @@ export function buildCapsuleViewModel(input: BuildViewModelInput): CapsuleViewMo
       statusLabel: STATUS.dataUnavailable,
       judgmentText: "正在显示上次成功的额度数据，恢复实时读取前暂不判断消耗速度。",
       usedPercent: input.forecast.usedPercent,
+      quotaWindows: formatQuotaWindows(input.quotaWindows, now),
       usageBreakdown: input.usageBreakdown ?? null,
       subscription: formatSubscription(input.subscription, now),
       resetCountdownText: formatCountdown(input.resetsAt, now),
@@ -80,6 +84,7 @@ export function buildCapsuleViewModel(input: BuildViewModelInput): CapsuleViewMo
         ? unavailableJudgment(input.diagnosticCode)
         : judgmentFor(input.forecast, input.usageBreakdown),
     usedPercent: input.forecast.usedPercent,
+    quotaWindows: formatQuotaWindows(input.quotaWindows, now),
     usageBreakdown: input.usageBreakdown ?? null,
     subscription: formatSubscription(input.subscription, now),
     resetCountdownText: formatCountdown(input.resetsAt, now),
@@ -103,6 +108,7 @@ export function buildProviderSlice(input: {
   diagnosticCode?: DiagnosticCode | null;
   usageBreakdown?: UsageBreakdown | null;
   subscription?: SubscriptionInfo | null;
+  quotaWindows?: QuotaWindow[];
 }): ProviderSlice {
   const vm = buildCapsuleViewModel({
     ...input,
@@ -116,6 +122,7 @@ export function buildProviderSlice(input: {
     statusLabel: vm.statusLabel,
     judgmentText: vm.judgmentText,
     usedPercent: vm.usedPercent,
+    quotaWindows: vm.quotaWindows ?? null,
     usageBreakdown: vm.usageBreakdown ?? null,
     subscription: vm.subscription ?? null,
     resetCountdownText: vm.resetCountdownText,
@@ -140,6 +147,7 @@ export function mergeDualViewModel(
     statusLabel: "双源监控",
     judgmentText: `Cursor ${formatSliceLine(cursor)}；Codex ${formatSliceLine(codex)}`,
     usedPercent: worse.usedPercent,
+    quotaWindows: null,
     subscription: null,
     resetCountdownText: worse.resetCountdownText,
     freshnessText: pickFreshest(cursor, codex),
@@ -149,6 +157,27 @@ export function mergeDualViewModel(
     resetsAtIso: worse.resetsAtIso,
     providers: [cursor, codex],
   };
+}
+
+function formatQuotaWindows(
+  windows: QuotaWindow[] | undefined,
+  now: Date,
+): QuotaWindowDisplay[] | null {
+  if (!windows?.length) return null;
+  return windows.map((window) => ({
+    label:
+      window.label === "five-hour"
+        ? "5小时"
+        : window.label === "weekly"
+          ? "每周"
+          : window.label === "monthly"
+            ? "每月"
+            : "周期",
+    usedPercent: window.usedPercent,
+    remainingPercent: window.remainingPercent,
+    resetCountdownText: formatCountdown(window.resetsAt, now),
+    resetsAtIso: window.resetsAt.toISOString(),
+  }));
 }
 
 function formatSliceLine(slice: ProviderSlice): string {

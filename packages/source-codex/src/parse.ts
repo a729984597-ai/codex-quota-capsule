@@ -11,6 +11,8 @@ export type CodexRateLimitParseOptions = {
 /** Codex Plus weekly window (~7 days). */
 const WEEKLY_MINUTES = 10_080;
 const WEEKLY_TOLERANCE_MINUTES = 60;
+const FIVE_HOUR_MINUTES = 300;
+const FIVE_HOUR_TOLERANCE_MINUTES = 5;
 
 /** Accept day / week / month style cycle windows (1 day … 45 days). */
 const MIN_CYCLE_MINUTES = 1_440;
@@ -26,6 +28,12 @@ export function parseCodexRateLimits(
     .filter((window): window is QuotaWindow => Boolean(window));
 
   const weeklyWindow = pickCycleWindow(windows, options.fetchedAt);
+  const fiveHourWindow = windows.find(
+    (window) =>
+      Math.abs(window.windowMinutes - FIVE_HOUR_MINUTES) <=
+        FIVE_HOUR_TOLERANCE_MINUTES &&
+      isUsableReset(window, options.fetchedAt, 6 * 60),
+  );
 
   if (!weeklyWindow) {
     return {
@@ -43,6 +51,12 @@ export function parseCodexRateLimits(
     sourceStatus: "ok",
     fetchedAt: options.fetchedAt,
     weeklyWindow,
+    quotaWindows: fiveHourWindow
+      ? [
+          { ...fiveHourWindow, label: "five-hour" },
+          weeklyWindow,
+        ]
+      : [weeklyWindow],
   };
 }
 

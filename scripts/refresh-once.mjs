@@ -6,6 +6,7 @@ import {
   buildProviderSlice,
   mergeDualViewModel,
   predictRunway,
+  selectGoverningQuotaWindow,
   selectProviderSlice,
 } from "../packages/core/dist/index.js";
 import { readCodexRateLimits } from "../packages/source-codex/dist/index.js";
@@ -81,18 +82,29 @@ function resolveProvider(pref) {
 
 function snapshotToSlice(snapshot, fetchedAt, provider) {
   const breakdown = snapshot.usageBreakdown ?? null;
+  const quotaWindows =
+    provider === "codex" && snapshot.quotaWindows?.length > 1
+      ? snapshot.quotaWindows
+      : undefined;
+  const governingWindow = quotaWindows
+    ? selectGoverningQuotaWindow(quotaWindows)
+    : undefined;
+  const forecastSnapshot = governingWindow
+    ? { ...snapshot, weeklyWindow: governingWindow }
+    : snapshot;
   if (snapshot.sourceStatus === "ok" && snapshot.weeklyWindow) {
-    const forecast = predictRunway(snapshot, fetchedAt);
+    const forecast = predictRunway(forecastSnapshot, fetchedAt);
     return buildProviderSlice({
       provider,
       forecast,
       fetchedAt: snapshot.fetchedAt,
-      resetsAt: snapshot.weeklyWindow.resetsAt,
+      resetsAt: governingWindow?.resetsAt ?? snapshot.weeklyWindow.resetsAt,
       now: fetchedAt,
       isStale: false,
       diagnosticCode: snapshot.diagnosticCode ?? null,
       usageBreakdown: breakdown,
       subscription: snapshot.subscription ?? null,
+      quotaWindows,
     });
   }
   const forecast = predictRunway(snapshot, fetchedAt);
@@ -106,6 +118,7 @@ function snapshotToSlice(snapshot, fetchedAt, provider) {
     diagnosticCode: snapshot.diagnosticCode ?? null,
     usageBreakdown: breakdown,
     subscription: snapshot.subscription ?? null,
+    quotaWindows,
   });
 }
 
@@ -129,6 +142,7 @@ function sliceToViewModel(slice) {
     statusLabel: slice.statusLabel,
     judgmentText: slice.judgmentText,
     usedPercent: slice.usedPercent,
+    quotaWindows: slice.quotaWindows ?? null,
     usageBreakdown: slice.usageBreakdown ?? null,
     subscription: slice.subscription ?? null,
     resetCountdownText: slice.resetCountdownText,

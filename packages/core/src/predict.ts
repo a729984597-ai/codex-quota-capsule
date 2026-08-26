@@ -1,9 +1,26 @@
-import type { AgentQuotaSnapshot, RunwayForecast } from "./model.js";
+import type {
+  AgentQuotaSnapshot,
+  QuotaWindow,
+  RunwayForecast,
+} from "./model.js";
 
 const WEEK_MINUTES = 10_080;
 // Remaining-quota thresholds (percent).
 const LOW_REMAINING = 30;
 const CRITICAL_REMAINING = 10;
+
+/** The most constrained active window determines the capsule's overall state. */
+export function selectGoverningQuotaWindow(
+  windows: QuotaWindow[],
+): QuotaWindow | undefined {
+  return windows.reduce<QuotaWindow | undefined>(
+    (tightest, window) =>
+      !tightest || window.remainingPercent < tightest.remainingPercent
+        ? window
+        : tightest,
+    undefined,
+  );
+}
 
 export function predictRunway(
   snapshot: AgentQuotaSnapshot,

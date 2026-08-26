@@ -2,6 +2,7 @@ import type {
   DiagnosticCode,
   ProviderId,
   ProviderSlice,
+  QuotaWindowDisplay,
   UsageBreakdown,
 } from "./model.js";
 
@@ -46,6 +47,7 @@ export function restoreCachedProviderSlice(input: {
     judgmentText:
       "正在显示上次成功的额度数据，恢复实时读取前暂不判断消耗速度。",
     usedPercent,
+    quotaWindows: readQuotaWindows(raw.quotaWindows),
     usageBreakdown: readBreakdown(raw.usageBreakdown),
     resetCountdownText: readText(raw.resetCountdownText, "重置未知"),
     freshnessText: formatStaleFreshness(ageMs),
@@ -55,6 +57,28 @@ export function restoreCachedProviderSlice(input: {
     resetsAtIso:
       typeof raw.resetsAtIso === "string" ? raw.resetsAtIso : null,
   };
+}
+
+function readQuotaWindows(value: unknown): QuotaWindowDisplay[] | null {
+  if (!Array.isArray(value)) return null;
+  const windows = value.flatMap((item) => {
+    const raw = readObject(item);
+    const label = typeof raw.label === "string" ? raw.label : null;
+    const usedPercent = readPercent(raw.usedPercent);
+    const remainingPercent = readPercent(raw.remainingPercent);
+    const resetCountdownText =
+      typeof raw.resetCountdownText === "string" ? raw.resetCountdownText : null;
+    const resetsAtIso =
+      typeof raw.resetsAtIso === "string" ? raw.resetsAtIso : null;
+    return label !== null &&
+      usedPercent !== null &&
+      remainingPercent !== null &&
+      resetCountdownText !== null &&
+      resetsAtIso !== null
+      ? [{ label, usedPercent, remainingPercent, resetCountdownText, resetsAtIso }]
+      : [];
+  });
+  return windows.length ? windows : null;
 }
 
 export function selectProviderSlice(input: {

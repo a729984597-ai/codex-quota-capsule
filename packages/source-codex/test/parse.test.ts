@@ -25,6 +25,35 @@ describe("parseCodexRateLimits", () => {
     expect(snap.weeklyWindow?.remainingPercent).toBe(65);
   });
 
+  it("preserves both the five-hour and weekly Codex windows", () => {
+    const result = JSON.parse(
+      readFileSync(join(fixturesDir, "five-hour-and-weekly.json"), "utf8"),
+    );
+    const snap = parseCodexRateLimits(result, { fetchedAt: FETCHED_AT });
+
+    expect(snap.sourceStatus).toBe("ok");
+    expect(snap.quotaWindows).toEqual([
+      expect.objectContaining({
+        label: "five-hour",
+        windowMinutes: 300,
+        usedPercent: 20,
+        remainingPercent: 80,
+      }),
+      expect.objectContaining({
+        label: "weekly",
+        windowMinutes: 10_080,
+        usedPercent: 35,
+        remainingPercent: 65,
+      }),
+    ]);
+    expect(snap.weeklyWindow).toMatchObject({
+      label: "weekly",
+      windowMinutes: 10_080,
+      usedPercent: 35,
+      remainingPercent: 65,
+    });
+  });
+
   it("returns error + no_weekly_window when only a short window exists", () => {
     const result = JSON.parse(
       readFileSync(join(fixturesDir, "missing-weekly.json"), "utf8"),

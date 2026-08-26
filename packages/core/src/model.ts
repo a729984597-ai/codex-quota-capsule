@@ -13,8 +13,16 @@ export type DiagnosticCode =
   | "stale"
   | "no_weekly_window";
 
+export type QuotaWindowKind =
+  | "five-hour"
+  | "weekly"
+  | "monthly"
+  | "cycle"
+  | "billing-cycle"
+  | "candidate";
+
 export type QuotaWindow = {
-  label: string;
+  label: QuotaWindowKind;
   windowMinutes: number;
   usedPercent: number;
   remainingPercent: number;
@@ -41,11 +49,22 @@ export type SubscriptionValidity = {
   expiresAtIso: string;
 };
 
+/** A quota cycle prepared for direct UI display. */
+export type QuotaWindowDisplay = {
+  label: string;
+  usedPercent: number;
+  remainingPercent: number;
+  resetCountdownText: string;
+  resetsAtIso: string;
+};
+
 export type AgentQuotaSnapshot = {
   provider: string;
   sourceStatus: SourceStatus;
   fetchedAt: Date;
   weeklyWindow?: QuotaWindow;
+  /** All simultaneously active provider quota windows, shortest first. */
+  quotaWindows?: QuotaWindow[];
   usageBreakdown?: UsageBreakdown;
   subscription?: SubscriptionInfo;
   errorMessage?: string;
@@ -81,6 +100,7 @@ export type ProviderSlice = {
   statusLabel: string;
   judgmentText: string;
   usedPercent: number | null;
+  quotaWindows?: QuotaWindowDisplay[] | null;
   usageBreakdown?: UsageBreakdown | null;
   subscription?: SubscriptionValidity | null;
   resetCountdownText: string;
@@ -100,6 +120,8 @@ export type CapsuleViewModel = {
   statusLabel: string;
   judgmentText: string;
   usedPercent: number | null;
+  /** Codex five-hour and longer-cycle limits, when both are available. */
+  quotaWindows?: QuotaWindowDisplay[] | null;
   /** Cursor: Auto+Composer / API split; absent for Codex. */
   usageBreakdown?: UsageBreakdown | null;
   /** Codex Plus subscription validity; absent when unavailable. */

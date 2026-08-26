@@ -50,3 +50,50 @@ describe("Codex subscription rendering", () => {
     expect(capsuleHeights(model(), true).height).toBe(165);
   });
 });
+
+describe("Codex quota-window rendering", () => {
+  it("shows five-hour and weekly remaining quota in collapsed and expanded views", () => {
+    const root = {
+      dataset: {},
+      classList: { toggle: () => undefined },
+      innerHTML: "",
+    } as unknown as HTMLElement;
+    const vm = model();
+    vm.quotaWindows = [
+      {
+        label: "5小时",
+        usedPercent: 20,
+        remainingPercent: 80,
+        resetCountdownText: "3h · 7/16 11:00",
+        resetsAtIso: "2026-07-16T03:00:00.000Z",
+      },
+      {
+        label: "每周",
+        usedPercent: 35,
+        remainingPercent: 65,
+        resetCountdownText: "3d · 7/19 08:00",
+        resetsAtIso: "2026-07-19T00:00:00.000Z",
+      },
+    ];
+
+    renderCapsule(root, vm, false);
+    expect(root.innerHTML).toContain("5小时");
+    expect(root.innerHTML).toContain("80%");
+    expect(root.innerHTML).toContain("每周");
+    expect(root.innerHTML).toContain("65%");
+
+    renderCapsule(root, vm, false, false, "minimal");
+    expect(root.innerHTML).not.toContain("5小时");
+    expect(root.innerHTML).not.toContain("每周");
+    expect(root.innerHTML).toContain("80%");
+    expect(root.innerHTML).toContain("65%");
+    expect(root.innerHTML).toContain("/</span>");
+    expect(capsuleHeights(vm, false, "minimal").width).toBe(140);
+
+    renderCapsule(root, vm, true);
+    expect(root.innerHTML).toContain("3h · 7/16 11:00");
+    expect(root.innerHTML).toContain("3d · 7/19 08:00");
+    expect(capsuleHeights(vm, false).width).toBe(380);
+    expect(capsuleHeights(vm, true).height).toBe(205);
+  });
+});

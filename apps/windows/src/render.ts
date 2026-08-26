@@ -13,6 +13,14 @@ export type SubscriptionValidity = {
   expiresAtIso: string;
 };
 
+export type QuotaWindowDisplay = {
+  label: string;
+  usedPercent: number;
+  remainingPercent: number;
+  resetCountdownText: string;
+  resetsAtIso: string;
+};
+
 export type ProviderSlice = {
   provider: "codex" | "cursor";
   state: string;
@@ -20,6 +28,7 @@ export type ProviderSlice = {
   statusLabel: string;
   judgmentText: string;
   usedPercent: number | null;
+  quotaWindows?: QuotaWindowDisplay[] | null;
   usageBreakdown?: UsageBreakdown | null;
   subscription?: SubscriptionValidity | null;
   resetCountdownText: string;
@@ -38,6 +47,7 @@ export type CapsuleViewModel = {
   statusLabel: string;
   judgmentText: string;
   usedPercent: number | null;
+  quotaWindows?: QuotaWindowDisplay[] | null;
   usageBreakdown?: UsageBreakdown | null;
   subscription?: SubscriptionValidity | null;
   resetCountdownText: string;
@@ -117,12 +127,21 @@ function usedHtml(
   provider: string,
   usedPercent: number | null,
   breakdown?: UsageBreakdown | null,
+  quotaWindows?: QuotaWindowDisplay[] | null,
 ): string {
   if (
     breakdown &&
     (breakdown.autoPercent !== null || breakdown.apiPercent !== null)
   ) {
     return `Auto <b class="${pctClass(breakdown.autoPercent)}">${escapeHtml(fmtPct(breakdown.autoPercent))}</b> · API <b class="${pctClass(breakdown.apiPercent)}">${escapeHtml(fmtPct(breakdown.apiPercent))}</b>`;
+  }
+  if (isCodexProvider(provider) && quotaWindows?.length) {
+    return quotaWindows
+      .map(
+        (window) =>
+          `${escapeHtml(window.label)} <b class="${pctClass(window.usedPercent)}">${escapeHtml(fmtPct(window.remainingPercent))}</b>`,
+      )
+      .join(" · ");
   }
   if (isCodexProvider(provider)) {
     const remaining = toRemaining(usedPercent);
@@ -158,7 +177,15 @@ export function renderCapsule(
   if (!expanded && layoutMode === "minimal") {
     if (isDual) {
       root.innerHTML = (model.providers ?? [])
-        .map((p) => minimalChip(p.provider, p.usedPercent, p.tone, p.usageBreakdown))
+        .map((p) =>
+          minimalChip(
+            p.provider,
+            p.usedPercent,
+            p.tone,
+            p.usageBreakdown,
+            p.quotaWindows,
+          ),
+        )
         .join("");
       return;
     }
@@ -167,6 +194,7 @@ export function renderCapsule(
       model.usedPercent,
       model.tone,
       model.usageBreakdown,
+      model.quotaWindows,
     );
     return;
   }
@@ -176,7 +204,12 @@ export function renderCapsule(
     return;
   }
 
-  const used = usedHtml(model.provider, model.usedPercent, model.usageBreakdown);
+  const used = usedHtml(
+    model.provider,
+    model.usedPercent,
+    model.usageBreakdown,
+    model.quotaWindows,
+  );
   const tag = providerLabel(model.provider);
 
   if (!expanded) {
@@ -201,6 +234,7 @@ export function renderCapsule(
   const refreshLabel = refreshing ? "刷新中" : "刷新";
   const bars =
     breakdownBars(model.usageBreakdown) ||
+    quotaWindowBars(model.quotaWindows) ||
     singleBar(model.usedPercent, isCodexProvider(model.provider));
   root.innerHTML = `
     <div class="expanded-row">
@@ -227,11 +261,13 @@ function minimalChip(
   usedPercent: number | null,
   tone: CapsuleTone,
   breakdown?: UsageBreakdown | null,
+  quotaWindows?: QuotaWindowDisplay[] | null,
 ): string {
   const tag = providerLabel(provider === "both" ? "codex" : provider);
   const hasSplit =
     breakdown &&
     (breakdown.autoPercent !== null || breakdown.apiPercent !== null);
+  const hasQuotaWindows = isCodexProvider(provider) && !!quotaWindows?.length;
   const showPct = hasSplit
     ? null
     : isCodexProvider(provider)
@@ -239,7 +275,14 @@ function minimalChip(
       : usedPercent;
   const pctHtml = hasSplit
     ? `<span class="mini-values"><b class="${pctClass(breakdown.autoPercent)}">${escapeHtml(fmtPct(breakdown.autoPercent))}</b><span class="mini-sep">/</span><b class="${pctClass(breakdown.apiPercent)}">${escapeHtml(fmtPct(breakdown.apiPercent))}</b></span>`
-    : `<span class="mini-values"><b class="${pctClass(usedPercent)}">${escapeHtml(fmtPct(showPct))}</b></span>`;
+    : hasQuotaWindows
+      ? `<span class="mini-values">${quotaWindows
+          .map(
+            (window) =>
+              `<b class="${pctClass(window.usedPercent)}">${escapeHtml(fmtPct(window.remainingPercent))}</b>`,
+          )
+          .join('<span class="mini-sep">/</span>')}</span>`
+      : `<span class="mini-values"><b class="${pctClass(usedPercent)}">${escapeHtml(fmtPct(showPct))}</b></span>`;
   return `
     <div class="mini-chip" data-tone="${escapeHtml(tone)}">
       <span class="dot" aria-hidden="true"></span>
@@ -268,6 +311,28 @@ function breakdownBars(breakdown?: UsageBreakdown | null): string {
         <span class="usage-bar"><span class="${fillClass(breakdown.apiPercent)}" style="width:${barWidth(breakdown.apiPercent)}%"></span></span>
         <span class="usage-pct ${pctClass(breakdown.apiPercent)}">${escapeHtml(fmtPct(breakdown.apiPercent))}</span>
       </div>
+    </div>
+  `;
+}
+
+function quotaWindowBars(windows?: QuotaWindowDisplay[] | null): string {
+  if (!windows?.length) return "";
+  return `
+    <div class="usage-split quota-windows">
+      ${windows
+        .map(
+          (window) => `
+            <div class="quota-window">
+              <div class="usage-line">
+                <span class="usage-name">${escapeHtml(window.label)}</span>
+                <span class="usage-bar" aria-hidden="true"><span class="${fillClass(window.usedPercent)}" style="width:${barWidth(window.remainingPercent)}%"></span></span>
+                <span class="usage-pct ${pctClass(window.usedPercent)}">${escapeHtml(fmtPct(window.remainingPercent))}</span>
+              </div>
+              <div class="quota-reset">${escapeHtml(window.resetCountdownText)}</div>
+            </div>
+          `,
+        )
+        .join("")}
     </div>
   `;
 }
@@ -306,7 +371,7 @@ function renderDual(
 ): void {
   const rows = (model.providers ?? [])
     .map((p) => {
-      const used = usedHtml(p.provider, p.usedPercent, p.usageBreakdown);
+      const used = usedHtml(p.provider, p.usedPercent, p.usageBreakdown, p.quotaWindows);
       const tag = providerLabel(p.provider);
       if (!expanded) {
         return `
@@ -326,7 +391,7 @@ function renderDual(
             <span class="tag">${escapeHtml(tag)}</span>
             <span class="status">${escapeHtml(p.statusLabel)}</span>
           </div>
-          ${breakdownBars(p.usageBreakdown) || singleBar(p.usedPercent, isCodexProvider(p.provider)) || `<span class="used">${used}</span>`}
+          ${breakdownBars(p.usageBreakdown) || quotaWindowBars(p.quotaWindows) || singleBar(p.usedPercent, isCodexProvider(p.provider)) || `<span class="used">${used}</span>`}
           <p class="judgment">${escapeHtml(p.judgmentText)}</p>
           <div class="meta">
             <span>${escapeHtml(p.freshnessText)}</span>
@@ -371,6 +436,9 @@ export function capsuleHeights(
     !!model.providers?.some((p) => p.provider === "cursor" && p.usageBreakdown);
   const hasSubscription =
     !!model.subscription || !!model.providers?.some((p) => !!p.subscription);
+  const hasQuotaWindows =
+    !!model.quotaWindows?.length ||
+    !!model.providers?.some((p) => !!p.quotaWindows?.length);
   if (!expanded && layoutMode === "minimal") {
     if (model.displayMode === "both") {
       return { width: 240, height: 28 };
@@ -379,14 +447,22 @@ export function capsuleHeights(
   }
   if (model.displayMode === "both") {
     // Fixed expanded width so short judgment text doesn't shrink the bars.
-    const expandedHeight = (hasCursorSplit ? 210 : 185) + (hasSubscription ? 30 : 0);
+    const expandedHeight =
+      (hasCursorSplit ? 210 : 185) +
+      (hasSubscription ? 30 : 0) +
+      (hasQuotaWindows ? 40 : 0);
     return { width: expanded ? 220 : 380, height: expanded ? expandedHeight : 52 };
   }
   if (hasCursorSplit) {
     return { width: expanded ? 220 : 340, height: expanded ? 150 + (hasSubscription ? 30 : 0) : 36 };
   }
   // Single provider with one usage bar (e.g. codex).
-  return { width: expanded ? 220 : 300, height: expanded ? 135 + (hasSubscription ? 30 : 0) : 36 };
+  return {
+    width: expanded ? 220 : hasQuotaWindows ? 380 : 300,
+    height: expanded
+      ? 135 + (hasSubscription ? 30 : 0) + (hasQuotaWindows ? 40 : 0)
+      : 36,
+  };
 }
 
 function subscriptionRow(

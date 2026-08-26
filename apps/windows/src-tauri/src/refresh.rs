@@ -850,6 +850,7 @@ fn vm_from_slice(slice: &ProviderSlice) -> CapsuleViewModel {
         status_label: slice.status_label.clone(),
         judgment_text: slice.judgment_text.clone(),
         used_percent: slice.used_percent,
+        quota_windows: slice.quota_windows.clone(),
         usage_breakdown: slice.usage_breakdown.clone(),
         subscription: slice.subscription.clone(),
         reset_countdown_text: slice.reset_countdown_text.clone(),
