@@ -88,6 +88,7 @@ describe("Codex quota-window rendering", () => {
     expect(root.innerHTML).toContain("80%");
     expect(root.innerHTML).toContain("65%");
     expect(root.innerHTML).toContain("/</span>");
+    expect(root.innerHTML).not.toContain('class="dot"');
     expect(capsuleHeights(vm, false, "minimal").width).toBe(140);
 
     renderCapsule(root, vm, true);
@@ -112,6 +113,7 @@ describe("logo minimal rendering", () => {
     expect(root.innerHTML).toContain('aria-label="Codex"');
     expect(root.innerHTML).not.toContain('<span class="tag">Codex</span>');
     expect(root.innerHTML).not.toContain("<svg");
+    expect(root.innerHTML).not.toContain('class="dot"');
 
     const cursor: CapsuleViewModel = {
       ...codex,

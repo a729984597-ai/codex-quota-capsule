@@ -291,7 +291,6 @@ function minimalChip(
       : `<span class="mini-values"><b class="${pctClass(usedPercent)}">${escapeHtml(fmtPct(showPct))}</b></span>`;
   return `
     <div class="mini-chip" data-tone="${escapeHtml(tone)}">
-      <span class="dot" aria-hidden="true"></span>
       ${useProviderLogo ? providerLogo(provider) : `<span class="tag">${escapeHtml(tag)}</span>`}
       ${pctHtml}
     </div>
